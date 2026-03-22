@@ -3,7 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 
 import { updateSession } from "@/utils/supabase/middleware";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const response = await updateSession(request);
 
   if (request.nextUrl.pathname.startsWith("/history")) {
