@@ -62,3 +62,53 @@ a {
   color: inherit;
   text-decoration: none;
 }
+
+.route-progress {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 9999;
+  width: min(320px, calc(100vw - 32px));
+  border-radius: 12px;
+  border: 1px solid rgba(124, 58, 237, 0.24);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 10px 24px rgba(76, 29, 149, 0.14);
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+  backdrop-filter: blur(8px);
+}
+
+.route-progress__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #4c1d95;
+}
+
+.route-progress__track {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: #ede9fe;
+  overflow: hidden;
+}
+
+.route-progress__bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 42%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #7c3aed, #4f46e5);
+  animation: route-progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes route-progress-slide {
+  0% {
+    transform: translateX(-110%);
+  }
+
+  100% {
+    transform: translateX(260%);
+  }
+}

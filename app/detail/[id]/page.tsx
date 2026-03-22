@@ -22,11 +22,55 @@ type BookmarkItem = {
   created_at: string;
 };
 
-const DEFAULT_COVER_IMAGES = [
-  "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1600&q=80",
-  "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1600&q=80",
-  "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=1600&q=80",
-];
+type WordCloudToken = {
+  word: string;
+  left: number;
+  top: number;
+  size: number;
+  rotate: number;
+  color: string;
+  opacity: number;
+  weight: 600 | 700 | 800;
+};
+
+const WORD_CLOUD_COLORS = ["#5b21b6", "#7c3aed", "#9333ea", "#4f46e5", "#6d28d9", "#a21caf"];
+
+const WORD_STOP_WORDS = new Set([
+  "我们",
+  "你们",
+  "他们",
+  "这个",
+  "那个",
+  "一些",
+  "一个",
+  "以及",
+  "可以",
+  "如果",
+  "然后",
+  "就是",
+  "因为",
+  "所以",
+  "进行",
+  "通过",
+  "对于",
+  "关于",
+  "内容",
+  "文章",
+  "链接",
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "that",
+  "this",
+  "into",
+  "your",
+  "http",
+  "https",
+  "www",
+  "com",
+]);
 
 function getDomainLabel(url: string) {
   try {
@@ -58,54 +102,81 @@ function deriveDisplayTitle(item: Pick<BookmarkItem, "title" | "summary" | "url"
   return `${getDomainLabel(item.url)} 的内容解读`;
 }
 
-function pickFallbackCover(seed: string) {
-  const hash = Array.from(seed).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-  return DEFAULT_COVER_IMAGES[hash % DEFAULT_COVER_IMAGES.length];
+function hashSeed(seed: string) {
+  let hash = 0;
+  for (const ch of seed) {
+    hash = (hash * 33 + ch.charCodeAt(0)) >>> 0;
+  }
+  return hash;
 }
 
-function normalizeImageUrl(raw: string, pageUrl: string) {
-  const clean = raw.trim().replace(/&amp;/gi, "&");
-  if (!clean || clean.startsWith("data:")) return "";
-  try {
-    return new URL(clean, pageUrl).toString();
-  } catch {
-    return "";
-  }
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
 }
 
-async function resolveCoverImage(pageUrl: string, seed: string) {
-  try {
-    const response = await fetch(pageUrl, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-      },
-      cache: "no-store",
-    });
+function tokenizeForCloud(raw: string) {
+  return raw
+    .replace(/https?:\/\/\S+/gi, " ")
+    .split(/[^a-zA-Z0-9\u4e00-\u9fa5#]+/g)
+    .map((token) => token.replace(/^#+|#+$/g, "").trim())
+    .filter(
+      (token) =>
+        token.length >= 2 &&
+        token.length <= 14 &&
+        !WORD_STOP_WORDS.has(token) &&
+        !WORD_STOP_WORDS.has(token.toLowerCase()),
+    );
+}
 
-    if (!response.ok) {
-      return pickFallbackCover(seed);
-    }
+function buildWordCloudTokens(item: BookmarkItem, displayTitle: string): WordCloudToken[] {
+  const sourceText = [
+    displayTitle,
+    getDomainLabel(item.url),
+    item.summary || "",
+    ...(item.outline || []),
+    ...((item.tags || []).map((tag) => `#${tag}`) || []),
+    (item.content || "").slice(0, 1200),
+  ].join(" ");
 
-    const html = await response.text();
-    const patterns = [
-      /<meta[^>]+property=["']og:image["'][^>]*content=["']([^"']+)["'][^>]*>/i,
-      /<meta[^>]+name=["']twitter:image["'][^>]*content=["']([^"']+)["'][^>]*>/i,
-      /<link[^>]+rel=["']image_src["'][^>]*href=["']([^"']+)["'][^>]*>/i,
-      /<img[^>]+src=["']([^"']+)["'][^>]*>/i,
-    ];
-
-    for (const pattern of patterns) {
-      const match = html.match(pattern)?.[1];
-      if (!match) continue;
-      const normalized = normalizeImageUrl(match, pageUrl);
-      if (normalized) return normalized;
-    }
-
-    return pickFallbackCover(seed);
-  } catch {
-    return pickFallbackCover(seed);
+  const frequency = new Map<string, number>();
+  for (const token of tokenizeForCloud(sourceText)) {
+    frequency.set(token, (frequency.get(token) || 0) + 1);
   }
+
+  if (frequency.size === 0) {
+    for (const fallbackWord of ["知识", "洞察", "摘要", "要点", getDomainLabel(item.url)]) {
+      frequency.set(fallbackWord, 1);
+    }
+  }
+
+  const entries = Array.from(frequency.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 26);
+
+  const maxCount = entries[0]?.[1] || 1;
+  const seed = hashSeed(`${item.id}-${displayTitle}`);
+
+  return entries.map(([word, count], index) => {
+    const ring = Math.floor(index / 6) + 1;
+    const angle = (seed + index * 47) % 360;
+    const rad = (angle * Math.PI) / 180;
+    const left = clamp(50 + Math.cos(rad) * (9 + ring * 10), 12, 88);
+    const top = clamp(50 + Math.sin(rad) * (7 + ring * 8), 14, 86);
+    const ratio = count / maxCount;
+    const size = Math.round(14 + ratio * 16 + (index < 3 ? 4 : 0));
+    const rotate = ((hashSeed(`${word}-${index}`) % 3) - 1) * 18;
+
+    return {
+      word,
+      left,
+      top,
+      size,
+      rotate,
+      color: WORD_CLOUD_COLORS[(hashSeed(word) + index) % WORD_CLOUD_COLORS.length],
+      opacity: 0.68 + Math.min(0.28, ratio * 0.24),
+      weight: count === maxCount ? 800 : ratio >= 0.6 ? 700 : 600,
+    };
+  });
 }
 
 export default async function DetailPage({ params }: DetailPageProps) {
@@ -134,13 +205,12 @@ export default async function DetailPage({ params }: DetailPageProps) {
 
   const item = data as BookmarkItem;
   const displayTitle = deriveDisplayTitle(item);
-  const coverImage = await resolveCoverImage(item.url, item.id);
-  const fallbackCover = pickFallbackCover(`${item.id}-backup`);
+  const outlineItems = (item.outline || []).filter(Boolean);
+  const tags = (item.tags || []).filter(Boolean);
+  const wordCloudTokens = buildWordCloudTokens(item, displayTitle);
   const savedAt = item.created_at
     ? new Date(item.created_at).toLocaleString("zh-CN")
     : "未知时间";
-  const outlineItems = (item.outline || []).filter(Boolean);
-  const tags = (item.tags || []).filter(Boolean);
 
   return (
     <div className={styles.page}>
@@ -188,12 +258,25 @@ export default async function DetailPage({ params }: DetailPageProps) {
           </div>
 
           <div className={styles.coverPlaceholder}>
-            <div
-              className={styles.coverImage}
-              role="img"
-              aria-label={displayTitle}
-              style={{ backgroundImage: `url("${coverImage}"), url("${fallbackCover}")` }}
-            />
+            <div className={styles.wordCloud} role="img" aria-label={`${displayTitle} 词云图`}>
+              {wordCloudTokens.map((token) => (
+                <span
+                  key={`${token.word}-${token.left}-${token.top}`}
+                  className={styles.wordCloudToken}
+                  style={{
+                    left: `${token.left}%`,
+                    top: `${token.top}%`,
+                    fontSize: `${token.size}px`,
+                    transform: `translate(-50%, -50%) rotate(${token.rotate}deg)`,
+                    color: token.color,
+                    opacity: token.opacity,
+                    fontWeight: token.weight,
+                  }}
+                >
+                  {token.word}
+                </span>
+              ))}
+            </div>
           </div>
 
           <section className={styles.originalCard}>
