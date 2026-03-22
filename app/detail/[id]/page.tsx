@@ -157,18 +157,9 @@ export default async function DetailPage({ params }: DetailPageProps) {
           </div>
 
           <div className={styles.topRight}>
-            <label className={styles.searchWrap}>
-              <span className="material-symbols-outlined">search</span>
-              <input placeholder="搜索洞察..." />
-            </label>
-            <button className={styles.iconBtn} aria-label="通知">
-              <span className="material-symbols-outlined">notifications</span>
-            </button>
-            <button className={styles.iconBtn} aria-label="设置">
-              <span className="material-symbols-outlined">settings</span>
-            </button>
+            <div className={styles.searchBadge}>搜索洞察</div>
             <div className={styles.avatar} aria-hidden="true">
-              {user.email?.[0]?.toUpperCase() || "U"}
+              我
             </div>
           </div>
         </div>
@@ -178,20 +169,18 @@ export default async function DetailPage({ params }: DetailPageProps) {
         <section className={styles.leftPanel}>
           <nav className={styles.breadcrumb}>
             <Link href="/history">知识库</Link>
-            <span className="material-symbols-outlined">chevron_right</span>
+            <span>/</span>
             <span>链接详情</span>
           </nav>
 
           <div className={styles.resourceHeader}>
             <div className={styles.resourceRow}>
-              <span className={`material-symbols-outlined ${styles.resourceIcon}`}>article</span>
               <span className={styles.resourceTag}>资源</span>
             </div>
             <h1 title={displayTitle}>{displayTitle}</h1>
             <div className={styles.metaRow}>
               <a href={item.url} target="_blank" rel="noreferrer">
-                <span className="material-symbols-outlined">link</span>
-                <span>{getDomainLabel(item.url)}</span>
+                {getDomainLabel(item.url)}
               </a>
               <span>•</span>
               <span>收藏于 {savedAt}</span>
@@ -220,9 +209,6 @@ export default async function DetailPage({ params }: DetailPageProps) {
         <aside className={styles.rightPanel}>
           <section className={styles.summaryCard}>
             <div className={styles.summaryHead}>
-              <div className={styles.summaryIconWrap}>
-                <span className="material-symbols-outlined">auto_awesome</span>
-              </div>
               <div>
                 <span>AI 摘要</span>
                 <h3>核心观点</h3>
@@ -233,7 +219,6 @@ export default async function DetailPage({ params }: DetailPageProps) {
 
           <section className={styles.outlineCard}>
             <h4>
-              <span className="material-symbols-outlined">format_list_bulleted</span>
               <span>概念框架</span>
             </h4>
             <ol className={styles.graph}>
