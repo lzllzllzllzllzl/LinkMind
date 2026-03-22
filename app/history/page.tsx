@@ -19,7 +19,6 @@ type BookmarkItem = {
 const ACCENT_CLASSES = [styles.accentPrimary, styles.accentSecondary, styles.accentTertiary];
 const LABEL_CLASSES = [styles.labelPrimary, styles.labelSecondary, styles.labelTertiary];
 const SUMMARY_CLASSES = [styles.summaryPrimary, styles.summarySecondary, styles.summaryTertiary];
-const ICON_CLASSES = [styles.iconPrimary, styles.iconSecondary, styles.iconTertiary];
 
 function formatRelativeTime(dateString: string, index: number) {
   if (index === 0) return "刚刚";
@@ -95,33 +94,21 @@ function TopBar({
         </div>
 
         <div className={styles.topRight}>
-          <div className={styles.searchBadge}>
-            <span className="material-symbols-outlined">search</span>
-            <span>搜索知识库</span>
-          </div>
+          <div className={styles.searchBadge}>搜索知识库</div>
 
           <Link href="/" className={styles.newLinkBtn}>
-            <span className="material-symbols-outlined">add</span>
-            <span>新建链接</span>
+            新建链接
           </Link>
 
-          <div className={styles.toolGroup}>
-            <button className={styles.iconBtn} aria-label="通知">
-              <span className="material-symbols-outlined">notifications</span>
-            </button>
-            <button className={styles.iconBtn} aria-label="设置">
-              <span className="material-symbols-outlined">settings</span>
-            </button>
-            {showAuthLink ? (
-              <Link href="/auth" className={styles.authLink}>
-                登录
-              </Link>
-            ) : (
-              <div className={styles.avatar} aria-hidden="true">
-                {userEmail?.[0]?.toUpperCase() || "U"}
-              </div>
-            )}
-          </div>
+          {showAuthLink ? (
+            <Link href="/auth" className={styles.authLink}>
+              登录
+            </Link>
+          ) : (
+            <div className={styles.avatar} aria-hidden="true">
+              {userEmail?.[0]?.toUpperCase() || "我"}
+            </div>
+          )}
         </div>
       </div>
     </header>
@@ -148,9 +135,7 @@ export default async function HistoryPage() {
           </section>
 
           <section className={styles.emptyStateCard}>
-            <div className={styles.emptyIcon}>
-              <span className="material-symbols-outlined">account_circle</span>
-            </div>
+            <div className={styles.emptyIcon}>用户</div>
             <h3>请先登录查看</h3>
             <p>登录后即可查看你保存的链接、摘要与结构化洞察。</p>
             <Link href="/auth">去登录</Link>
@@ -172,9 +157,7 @@ export default async function HistoryPage() {
         <TopBar userEmail={user.email} />
         <main className={styles.main}>
           <section className={styles.emptyStateCard}>
-            <div className={styles.emptyIcon}>
-              <span className="material-symbols-outlined">error</span>
-            </div>
+            <div className={styles.emptyIcon}>!</div>
             <h3>加载失败</h3>
             <p>{error.message}</p>
             <Link href="/">返回首页</Link>
@@ -198,14 +181,8 @@ export default async function HistoryPage() {
           </div>
 
           <div className={styles.headerActions}>
-            <button className={styles.actionBtn}>
-              <span className="material-symbols-outlined">filter_list</span>
-              <span>筛选</span>
-            </button>
-            <button className={styles.actionBtn}>
-              <span className="material-symbols-outlined">sort</span>
-              <span>最近使用</span>
-            </button>
+            <button className={styles.actionBtn}>筛选</button>
+            <button className={styles.actionBtn}>最近使用</button>
           </div>
         </section>
 
@@ -248,17 +225,11 @@ export default async function HistoryPage() {
 
                 <div className={styles.cardFoot}>
                   <div className={styles.footUrl}>
-                    <span
-                      className={`material-symbols-outlined ${
-                        ICON_CLASSES[index % ICON_CLASSES.length]
-                      }`}
-                    >
-                      link
-                    </span>
+                    <span className={styles.sourceText}>来源</span>
                     <span title={item.url}>{getDomainLabel(item.url)}</span>
                   </div>
                   <Link href={`/detail/${item.id}`} className={styles.moreBtn} aria-label="查看详情">
-                    <span className="material-symbols-outlined">more_horiz</span>
+                    详情
                   </Link>
                 </div>
               </li>
@@ -266,9 +237,7 @@ export default async function HistoryPage() {
           })}
 
           <li className={styles.emptyCardTile}>
-            <div className={styles.emptyIcon}>
-              <span className="material-symbols-outlined">add_circle</span>
-            </div>
+            <div className={styles.emptyIcon}>＋</div>
             <h3>开始新的探索</h3>
             <p>粘贴任何链接，让 AI 为您提取深度洞察</p>
             <Link href="/">立即添加</Link>
@@ -277,10 +246,7 @@ export default async function HistoryPage() {
 
         {list.length > 0 ? (
           <div className={styles.loadMoreWrap}>
-            <button className={styles.loadMoreBtn}>
-              <span>加载更多记录</span>
-              <span className="material-symbols-outlined">keyboard_arrow_down</span>
-            </button>
+            <button className={styles.loadMoreBtn}>加载更多记录</button>
           </div>
         ) : null}
       </main>
