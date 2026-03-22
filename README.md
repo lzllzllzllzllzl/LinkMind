@@ -19,13 +19,13 @@
 
 ## 🛠 技术栈
 
-| 类别 | 技术 |
-|------|------|
-| 前端框架 | Next.js 16 (App Router) + React 19 |
-| 样式方案 | CSS Modules |
-| 后端服务 | Supabase (PostgreSQL + Auth) |
-| AI 能力 | 豆包 API / OpenAI API |
-| 部署平台 | Vercel |
+| 类别    | 技术                                 |
+| ----- | ---------------------------------- |
+| 前端框架  | Next.js 16 (App Router) + React 19 |
+| 样式方案  | CSS Modules                        |
+| 后端服务  | Supabase (PostgreSQL + Auth)       |
+| AI 能力 | 豆包 API / OpenAI API                |
+| 部署平台  | Vercel                             |
 
 ## 🚀 快速开始
 
@@ -59,11 +59,11 @@ cp .env.example .env.local
 
 #### Supabase（必需）
 
-| 变量名 | 说明 |
-|--------|------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase 项目 URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 匿名访问 Key |
-| `SUPABASE_SERVICE_ROLE_KEY` | 服务端管理 Key |
+| 变量名                             | 说明              |
+| ------------------------------- | --------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | Supabase 项目 URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 匿名访问 Key        |
+| `SUPABASE_SERVICE_ROLE_KEY`     | 服务端管理 Key       |
 
 > 前往 [Supabase Dashboard](https://supabase.com/dashboard) 创建项目并获取以上凭证
 
@@ -71,19 +71,19 @@ cp .env.example .env.local
 
 **方案 A: 豆包 API（推荐）**
 
-| 变量名 | 说明 |
-|--------|------|
-| `ARK_API_KEY` | 豆包 API Key |
+| 变量名            | 说明                                         |
+| -------------- | ------------------------------------------ |
+| `ARK_API_KEY`  | 豆包 API Key                                 |
 | `ARK_BASE_URL` | `https://ark.cn-beijing.volces.com/api/v3` |
-| `ARK_MODEL` | `doubao-1-5-lite-32k-250115` |
+| `ARK_MODEL`    | `doubao-1-5-lite-32k-250115`               |
 
 **方案 B: OpenAI API**
 
-| 变量名 | 说明 |
-|--------|------|
-| `OPENAI_API_KEY` | OpenAI API Key |
+| 变量名               | 说明                          |
+| ----------------- | --------------------------- |
+| `OPENAI_API_KEY`  | OpenAI API Key              |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` |
-| `OPENAI_MODEL` | `gpt-4o-mini` |
+| `OPENAI_MODEL`    | `gpt-4o-mini`               |
 
 ### 4. 初始化数据库
 
@@ -95,7 +95,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-打开 [http://localhost:3000](http://localhost:3000) 查看效果。
+打开 <http://localhost:3000> 查看效果。
 
 ## 📖 使用流程
 
@@ -104,6 +104,136 @@ npm run dev
 3. **AI 解析** - 系统自动抓取内容并调用 AI 生成摘要、大纲、标签
 4. **保存知识** - 一键保存到个人知识库
 5. **追问 AI** - 进入详情页可基于原文继续提问
+
+## 🔌 Supabase 数据读写机制
+
+### 1. Supabase 简介
+
+Supabase 是一个开源的 Firebase 替代方案，提供：
+
+- **PostgreSQL 数据库** - 强大的关系型数据库
+- **Auth 认证系统** - 用户注册/登录
+- **实时订阅** - 数据变化实时推送
+
+### 2. 数据表结构
+
+```sql
+create table public.bookmarks (
+  id uuid primary key,           -- 唯一标识
+  user_id uuid,                  -- 所属用户
+  title text,                    -- 标题
+  url text,                      -- 原始链接
+  content text,                  -- 网页正文内容
+  summary text,                  -- AI 生成的摘要
+  outline jsonb,                 -- 文章大纲（JSON 数组）
+  tags text[],                   -- 标签数组
+  created_at timestamptz         -- 创建时间
+);
+```
+
+### 3. 本项目的数据读写流程
+
+#### 连接 Supabase
+
+项目通过 `utils/supabase/server.ts` 创建客户端连接：
+
+```typescript
+// utils/supabase/server.ts
+import { createServerClient } from "@supabase/ssr";
+
+export async function createClient() {
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { ... },
+        setAll() { ... },
+      },
+    }
+  );
+}
+```
+
+#### 写入数据（保存收藏）
+
+```
+用户点击保存 → /api/save/route.ts → bookmark-store.ts → Supabase.insert()
+```
+
+核心代码在 [lib/bookmark-store.ts](lib/bookmark-store.ts#L22-L48)：
+
+```typescript
+export async function saveBookmark(input: SaveBookmarkInput) {
+  const supabase = getSupabaseAdmin();
+  
+  const { data, error } = await supabase
+    .from("bookmarks")
+    .insert({ ... })
+    .select("*")
+    .single();
+    
+  return data;
+}
+```
+
+#### 读取数据（查询收藏）
+
+```
+用户访问历史页 → /api/bookmarks/route.ts → bookmark-store.ts → Supabase.select()
+```
+
+核心代码在 [lib/bookmark-store.ts](lib/bookmark-store.ts#L51-L66)：
+
+```typescript
+export async function getAllBookmarks() {
+  const supabase = getSupabaseAdmin();
+  
+  const { data, error } = await supabase
+    .from("bookmarks")
+    .select("*")
+    .order("created_at", { ascending: false });
+    
+  return data ?? [];
+}
+```
+
+#### 认证用户数据隔离
+
+在 [app/api/chat/route.ts](app/api/chat/route.ts#L34-L48) 中，查询时同时验证用户身份：
+
+```typescript
+const supabase = await createClient();
+const { data: { user } } = await supabase.auth.getUser();
+
+// 查询时限制只返回当前用户的数据
+const { data } = await supabase
+  .from("bookmarks")
+  .select("*")
+  .eq("user_id", user.id)  // 用户隔离
+  .single();
+```
+
+### 4. 环境变量配置
+
+| 变量名                             | 说明           | 获取方式              |
+| ------------------------------- | ------------ | ----------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | 项目 URL       | Supabase 设置 → API |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 匿名 Key（客户端用） | Supabase 设置 → API |
+| `SUPABASE_SERVICE_ROLE_KEY`     | 管理 Key（服务端用） | Supabase 设置 → API |
+
+### 5. 本地无配置时的降级机制
+
+项目支持在没有 Supabase 时使用内存存储（仅开发调试用）：
+
+```typescript
+// lib/bookmark-store.ts
+if (!hasSupabaseConfig()) {
+  // 使用内存数组存储
+  memoryBookmarks.unshift(record);
+  return record;
+}
+```
 
 ## 🌐 部署到 Vercel
 
