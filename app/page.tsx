@@ -17,7 +17,7 @@ type ChatResponse = {
 
 export default function Home() {
   const router = useRouter();
-  const { authReady, isAuthenticated, userEmail, signOut } = useAuth();
+  const { authReady, isAuthenticated, user, userEmail, signOut } = useAuth();
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("正在抓取网页内容…");
@@ -76,17 +76,13 @@ export default function Home() {
       setLoadingMessage("正在保存到知识库…");
       setLoadingStage(3);
 
-      const supabase = createClient();
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError || !user) {
+      if (!user) {
         alert("请先登录");
-        router.push("/auth");
+        router.push("/auth?next=/");
         return;
       }
+
+      const supabase = createClient();
 
       const tags = Array.isArray(processed.tags) && processed.tags.length > 0 ? processed.tags : ["未分类"];
 

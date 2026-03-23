@@ -119,14 +119,67 @@ function TopBar({
   );
 }
 
-export default async function HistoryPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
+export default function HistoryPage() {
+  const { authReady, isAuthenticated, user, userEmail } = useAuth();
+  const [list, setList] = useState<BookmarkItem[]>([]);
+  const [listLoading, setListLoading] = useState(false);
+  const [listError, setListError] = useState("");
 
-  if (userError || !user) {
+  useEffect(() => {
+    if (!authReady) return;
+
+    if (!isAuthenticated || !user) {
+      return;
+    }
+
+    let active = true;
+
+    const loadBookmarks = async () => {
+      setListLoading(true);
+      setListError("");
+
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("bookmarks")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (!active) return;
+
+      if (error) {
+        setListError(error.message);
+        setList([]);
+      } else {
+        setList((data ?? []) as BookmarkItem[]);
+      }
+
+      setListLoading(false);
+    };
+
+    void loadBookmarks();
+
+    return () => {
+      active = false;
+    };
+  }, [authReady, isAuthenticated, user]);
+
+  if (!authReady) {
+    return (
+      <div className={styles.page}>
+        <TopBar showAuthLink />
+        <main className={styles.main}>
+          <section className={styles.emptyStateCard}>
+            <div className={styles.emptyIcon}>…</div>
+            <h3>正在同步登录状态</h3>
+            <p>请稍候，正在加载您的知识库。</p>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || !user) {
     return (
       <div className={styles.page}>
         <TopBar showAuthLink />
@@ -142,28 +195,22 @@ export default async function HistoryPage() {
             <div className={styles.emptyIcon}>用户</div>
             <h3>请先登录查看</h3>
             <p>登录后即可查看你保存的链接、摘要与结构化洞察。</p>
-            <Link href="/auth">去登录</Link>
+            <Link href="/auth?next=/history">去登录</Link>
           </section>
         </main>
       </div>
     );
   }
 
-  const { data, error } = await supabase
-    .from("bookmarks")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
-
-  if (error) {
+  if (listError) {
     return (
       <div className={styles.page}>
-        <TopBar userEmail={user.email} />
+        <TopBar userEmail={userEmail || user.email} />
         <main className={styles.main}>
           <section className={styles.emptyStateCard}>
             <div className={styles.emptyIcon}>!</div>
             <h3>加载失败</h3>
-            <p>{error.message}</p>
+            <p>{listError}</p>
             <Link href="/">返回首页</Link>
           </section>
         </main>
@@ -171,11 +218,9 @@ export default async function HistoryPage() {
     );
   }
 
-  const list = (data ?? []) as BookmarkItem[];
-
   return (
     <div className={styles.page}>
-      <TopBar userEmail={user.email} />
+      <TopBar userEmail={userEmail || user.email} />
 
       <main className={styles.main}>
         <section className={styles.header}>
@@ -190,63 +235,71 @@ export default async function HistoryPage() {
           </div>
         </section>
 
-        <ul className={styles.grid}>
-          {list.map((item, index) => {
-            const displayTitle = deriveDisplayTitle(item);
-            return (
-              <li
-                key={item.id}
-                className={`${styles.card} ${ACCENT_CLASSES[index % ACCENT_CLASSES.length]}`}
-              >
-                <div className={styles.cardBody}>
-                  <div className={styles.cardHead}>
-                    <span
-                      className={`${styles.label} ${LABEL_CLASSES[index % LABEL_CLASSES.length]}`}
+        {listLoading ? (
+          <section className={styles.emptyStateCard}>
+            <div className={styles.emptyIcon}>…</div>
+            <h3>加载中</h3>
+            <p>正在读取你的知识库内容。</p>
+          </section>
+        ) : (
+          <ul className={styles.grid}>
+            {list.map((item, index) => {
+              const displayTitle = deriveDisplayTitle(item);
+              return (
+                <li
+                  key={item.id}
+                  className={`${styles.card} ${ACCENT_CLASSES[index % ACCENT_CLASSES.length]}`}
+                >
+                  <div className={styles.cardBody}>
+                    <div className={styles.cardHead}>
+                      <span
+                        className={`${styles.label} ${LABEL_CLASSES[index % LABEL_CLASSES.length]}`}
+                      >
+                        #{(item.tags?.[0] || "知识").slice(0, 8)}
+                      </span>
+                      <span className={styles.time}>{formatRelativeTime(item.created_at, index)}</span>
+                    </div>
+
+                    <Link href={`/detail/${item.id}`} className={styles.title} title={displayTitle}>
+                      {displayTitle}
+                    </Link>
+
+                    <div
+                      className={`${styles.summaryBox} ${
+                        SUMMARY_CLASSES[index % SUMMARY_CLASSES.length]
+                      }`}
                     >
-                      #{(item.tags?.[0] || "知识").slice(0, 8)}
-                    </span>
-                    <span className={styles.time}>{formatRelativeTime(item.created_at, index)}</span>
+                      <p className={styles.summary}>{item.summary || "暂无摘要内容"}</p>
+                    </div>
+
+                    <div className={styles.tags}>
+                      {(item.tags || []).slice(0, 3).map((tag) => (
+                        <span key={tag}>#{tag}</span>
+                      ))}
+                    </div>
                   </div>
 
-                  <Link href={`/detail/${item.id}`} className={styles.title} title={displayTitle}>
-                    {displayTitle}
-                  </Link>
-
-                  <div
-                    className={`${styles.summaryBox} ${
-                      SUMMARY_CLASSES[index % SUMMARY_CLASSES.length]
-                    }`}
-                  >
-                    <p className={styles.summary}>{item.summary || "暂无摘要内容"}</p>
+                  <div className={styles.cardFoot}>
+                    <div className={styles.footUrl}>
+                      <span className={styles.sourceText}>来源</span>
+                      <span title={item.url}>{getDomainLabel(item.url)}</span>
+                    </div>
+                    <Link href={`/detail/${item.id}`} className={styles.moreBtn} aria-label="查看详情">
+                      详情
+                    </Link>
                   </div>
+                </li>
+              );
+            })}
 
-                  <div className={styles.tags}>
-                    {(item.tags || []).slice(0, 3).map((tag) => (
-                      <span key={tag}>#{tag}</span>
-                    ))}
-                  </div>
-                </div>
-
-                <div className={styles.cardFoot}>
-                  <div className={styles.footUrl}>
-                    <span className={styles.sourceText}>来源</span>
-                    <span title={item.url}>{getDomainLabel(item.url)}</span>
-                  </div>
-                  <Link href={`/detail/${item.id}`} className={styles.moreBtn} aria-label="查看详情">
-                    详情
-                  </Link>
-                </div>
-              </li>
-            );
-          })}
-
-          <li className={styles.emptyCardTile}>
-            <div className={styles.emptyIcon}>＋</div>
-            <h3>开始新的探索</h3>
-            <p>粘贴任何链接，让 AI 为您提取深度洞察</p>
-            <Link href="/">立即添加</Link>
-          </li>
-        </ul>
+            <li className={styles.emptyCardTile}>
+              <div className={styles.emptyIcon}>＋</div>
+              <h3>开始新的探索</h3>
+              <p>粘贴任何链接，让 AI 为您提取深度洞察</p>
+              <Link href="/">立即添加</Link>
+            </li>
+          </ul>
+        )}
 
         {list.length > 0 ? (
           <div className={styles.loadMoreWrap}>
