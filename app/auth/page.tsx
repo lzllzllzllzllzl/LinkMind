@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, useEffect, useState } from "react";
 
+import { useAuth } from "@/app/providers/auth-provider";
 import { createClient } from "@/utils/supabase/client";
 
 import styles from "./page.module.css";
@@ -12,7 +13,11 @@ type Mode = "signin" | "signup";
 
 export default function AuthPage() {
   const router = useRouter();
-  
+  const searchParams = useSearchParams();
+  const { refreshAuth, authReady, isAuthenticated } = useAuth();
+
+  const rawNext = searchParams.get("next");
+  const nextPath = rawNext && rawNext.startsWith("/") ? rawNext : "/";
 
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
@@ -20,6 +25,13 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    if (!authReady) return;
+    if (isAuthenticated) {
+      router.replace(nextPath);
+    }
+  }, [authReady, isAuthenticated, nextPath, router]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -51,8 +63,9 @@ export default function AuthPage() {
           throw new Error(signInError.message);
         }
 
+        await refreshAuth();
         setSuccess("登录成功，正在进入系统...");
-        router.push("/");
+        router.replace(nextPath);
         return;
       }
 

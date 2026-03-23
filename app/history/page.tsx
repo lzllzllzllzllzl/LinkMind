@@ -1,6 +1,10 @@
-import Link from "next/link";
+"use client";
 
-import { createClient } from "@/utils/supabase/server";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
+import { useAuth } from "@/app/providers/auth-provider";
+import { createClient } from "@/utils/supabase/client";
 
 import styles from "./page.module.css";
 

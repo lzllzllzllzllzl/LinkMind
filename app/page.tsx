@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
+import { useAuth } from "@/app/providers/auth-provider";
 import type { ProcessResult } from "@/types/bookmark";
 import { createClient } from "@/utils/supabase/client";
 
@@ -16,6 +17,7 @@ type ChatResponse = {
 
 export default function Home() {
   const router = useRouter();
+  const { authReady, isAuthenticated, userEmail, signOut } = useAuth();
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("正在抓取网页内容…");
@@ -27,51 +29,13 @@ export default function Home() {
   const [chatAnswer, setChatAnswer] = useState("");
   const [chatError, setChatError] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
-  const [authReady, setAuthReady] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userEmail, setUserEmail] = useState("");
-
-  useEffect(() => {
-    const supabase = createClient();
-    let mounted = true;
-
-    const init = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!mounted) return;
-      setIsAuthenticated(Boolean(user));
-      setUserEmail(user?.email || "");
-      setAuthReady(true);
-    };
-
-    init();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return;
-      setIsAuthenticated(Boolean(session?.user));
-      setUserEmail(session?.user?.email || "");
-      setAuthReady(true);
-    });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, []);
 
   const handleSignOut = async () => {
-    const supabase = createClient();
-    const { error: signOutError } = await supabase.auth.signOut();
+    const signOutError = await signOut();
     if (signOutError) {
       alert(`退出失败：${signOutError.message}`);
       return;
     }
-    setIsAuthenticated(false);
-    setUserEmail("");
     router.push("/");
   };
 

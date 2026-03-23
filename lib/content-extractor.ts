@@ -1,33 +1,23 @@
+import { load } from "cheerio";
+
 export interface ExtractedContent {
   title: string;
   content: string;
 }
 
-function stripHtml(html: string) {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+const EXTRACTION_FAIL_MESSAGE = "提取失败，该平台反爬较强，请手动复制正文后粘贴到输入框";
+const SCRAPE_DO_TARGET_DOMAINS = ["zhihu.com", "zhuanlan.zhihu.com", "xiaohongshu.com", "xhs.cn"];
+const FETCH_TIMEOUT_MS = 20000;
 
-function pickMainHtml(html: string) {
-  const articleMatch = html.match(/<article[\s\S]*?<\/article>/i);
-  if (articleMatch?.[0]) return articleMatch[0];
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0",
+];
 
-  const mainMatch = html.match(/<main[\s\S]*?<\/main>/i);
-  if (mainMatch?.[0]) return mainMatch[0];
-
-  const bodyMatch = html.match(/<body[\s\S]*?<\/body>/i);
-  if (bodyMatch?.[0]) return bodyMatch[0];
-
-  return html;
+function pickRandomUserAgent() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
 function decodeHtmlEntities(value: string) {
@@ -38,6 +28,10 @@ function decodeHtmlEntities(value: string) {
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'");
+}
+
+function normalizeText(value: string) {
+  return decodeHtmlEntities(value).replace(/\s+/g, " ").trim();
 }
 
 function getFallbackTitle(url: string) {
@@ -54,51 +48,102 @@ function looksLikeUrl(value: string) {
 }
 
 function normalizeTitle(raw: string, fallbackUrl: string) {
-  const title = decodeHtmlEntities(raw).replace(/\s+/g, " ").trim();
+  const title = normalizeText(raw);
   if (!title || looksLikeUrl(title)) {
     return getFallbackTitle(fallbackUrl);
   }
   return title;
 }
 
-function pickMetaTitle(html: string) {
-  const patterns = [
-    /<meta[^>]+property=["']og:title["'][^>]*content=["']([^"']+)["'][^>]*>/i,
-    /<meta[^>]+name=["']twitter:title["'][^>]*content=["']([^"']+)["'][^>]*>/i,
-    /<meta[^>]+itemprop=["']headline["'][^>]*content=["']([^"']+)["'][^>]*>/i,
-    /<title[^>]*>([\s\S]*?)<\/title>/i,
-  ];
-
-  for (const pattern of patterns) {
-    const matched = html.match(pattern)?.[1];
-    if (matched?.trim()) return matched;
+function isScrapeDoTarget(url: string) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return SCRAPE_DO_TARGET_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`));
+  } catch {
+    return false;
   }
-
-  return "";
 }
 
-function pickTitle(html: string, fallbackUrl: string) {
-  const raw = pickMetaTitle(html);
-  if (!raw) return getFallbackTitle(fallbackUrl);
+async function fetchHtml(url: string, initHeaders?: Record<string, string>) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent": pickRandomUserAgent(),
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        ...initHeaders,
+      },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`抓取失败，状态码: ${response.status}`);
+    }
+
+    const html = await response.text();
+    if (!html.trim()) {
+      throw new Error("抓取成功但 HTML 为空");
+    }
+
+    return html;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function pickTitleFromCheerio(html: string, fallbackUrl: string) {
+  const $ = load(html);
+  const raw =
+    $('meta[property="og:title"]').attr("content") ||
+    $('meta[name="twitter:title"]').attr("content") ||
+    $('meta[itemprop="headline"]').attr("content") ||
+    $("title").first().text() ||
+    "";
+
   return normalizeTitle(raw, fallbackUrl);
 }
 
-async function extractViaDirectFetch(url: string): Promise<ExtractedContent> {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-    },
-    cache: "no-store",
-  });
+function pickMainTextFromCheerio(html: string) {
+  const $ = load(html);
+  $("script, style, noscript, iframe, svg").remove();
 
-  if (!response.ok) {
-    throw new Error(`抓取失败，状态码: ${response.status}`);
+  const candidates: string[] = [];
+  const selectors = [
+    "article",
+    "main",
+    "[role='main']",
+    ".RichText",
+    ".ztext",
+    ".Post-RichTextContainer",
+    ".note-content",
+    ".content",
+  ];
+
+  for (const selector of selectors) {
+    $(selector).each((_, element) => {
+      const text = normalizeText($(element).text());
+      if (text.length > 80) {
+        candidates.push(text);
+      }
+    });
   }
 
-  const html = await response.text();
-  const title = pickTitle(html, url);
-  const content = stripHtml(pickMainHtml(html)).slice(0, 12000);
+  const bodyText = normalizeText($("body").text());
+  if (bodyText.length > 80) {
+    candidates.push(bodyText);
+  }
+
+  const best = candidates.sort((a, b) => b.length - a.length)[0] || "";
+  return best.slice(0, 12000).trim();
+}
+
+function parseHtmlToContent(html: string, sourceUrl: string): ExtractedContent {
+  const title = pickTitleFromCheerio(html, sourceUrl);
+  const content = pickMainTextFromCheerio(html);
 
   if (!content) {
     throw new Error("未提取到正文内容");
@@ -107,38 +152,44 @@ async function extractViaDirectFetch(url: string): Promise<ExtractedContent> {
   return { title, content };
 }
 
-async function extractViaJinaReader(url: string): Promise<ExtractedContent> {
-  const readerUrl = `https://r.jina.ai/http://${url.replace(/^https?:\/\//, "")}`;
-  const response = await fetch(readerUrl, { cache: "no-store" });
+function buildScrapeDoUrl(originalUrl: string, token: string) {
+  return `http://api.scrape.do/?url=${encodeURIComponent(originalUrl)}&token=${encodeURIComponent(
+    token,
+  )}&render_js=true&premium_proxy=true`;
+}
 
-  if (!response.ok) {
-    throw new Error(`Jina Reader 抓取失败，状态码: ${response.status}`);
-  }
+async function extractViaDirectFetch(url: string): Promise<ExtractedContent> {
+  const html = await fetchHtml(url);
+  return parseHtmlToContent(html, url);
+}
 
-  const text = (await response.text()).trim();
-  if (!text) {
-    throw new Error("Jina Reader 未返回内容");
-  }
-
-  const lines = text.split("\n").filter((line) => line.trim());
-  const title = lines[0]?.trim() || url;
-  const content = text.slice(0, 12000);
-
-  return { title, content };
+async function extractViaScrapeDo(url: string, token: string): Promise<ExtractedContent> {
+  const scrapeDoUrl = buildScrapeDoUrl(url, token);
+  const html = await fetchHtml(scrapeDoUrl);
+  return parseHtmlToContent(html, url);
 }
 
 export async function extractMainContent(url: string): Promise<ExtractedContent> {
+  const enableScrapeDo = false;
+
+  if (enableScrapeDo && isScrapeDoTarget(url)) {
+    const token = process.env.SCRAPE_DO_API_TOKEN?.trim();
+
+    if (token) {
+      try {
+        return await extractViaScrapeDo(url, token);
+      } catch (error) {
+        console.error("[extractMainContent] Scrape.do 抓取失败，回退原生 fetch:", error);
+      }
+    } else {
+      console.error("[extractMainContent] SCRAPE_DO_API_TOKEN 未配置，回退原生 fetch");
+    }
+  }
+
   try {
     return await extractViaDirectFetch(url);
-  } catch {
-    try {
-      return await extractViaJinaReader(url);
-    } catch {
-      return {
-        title: `未能提取网页标题（${url}）`,
-        content:
-          "内容提取失败，已使用MVP回退文本。你可以稍后重试，或接入更稳定的网页解析服务。",
-      };
-    }
+  } catch (error) {
+    console.error("[extractMainContent] 原生 fetch 抓取失败:", error);
+    throw new Error(EXTRACTION_FAIL_MESSAGE);
   }
 }
