@@ -101,6 +101,31 @@ export default function Home() {
         .single();
 
       if (insertError || !inserted) {
+        const isDuplicateUrl =
+          insertError?.code === "23505" ||
+          insertError?.message?.includes("bookmarks_url_key") ||
+          insertError?.message?.includes("duplicate key value");
+
+        if (isDuplicateUrl) {
+          const { data: existed } = await supabase
+            .from("bookmarks")
+            .select("id")
+            .eq("url", processed.url)
+            .eq("user_id", user.id)
+            .maybeSingle();
+
+          if (existed?.id) {
+            setSavedId(existed.id);
+            alert("该链接已存在于你的知识库，已为你定位到已有记录");
+            setLoadingMessage("已复用已有记录，可直接在当前页继续问 AI");
+            setLoadingStage(4);
+            return;
+          }
+
+          alert("该链接已存在（可能由唯一索引限制），请勿重复保存");
+          return;
+        }
+
         console.error("保存失败:", insertError);
         alert(`保存失败：${insertError?.message || "未知错误"}`);
         return;

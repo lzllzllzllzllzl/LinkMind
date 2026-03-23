@@ -5,9 +5,9 @@ export interface ExtractedContent {
   content: string;
 }
 
-const EXTRACTION_FAIL_MESSAGE = "提取失败，该平台反爬较强，请手动复制正文后粘贴到输入框";
 const SCRAPE_DO_TARGET_DOMAINS = ["zhihu.com", "zhuanlan.zhihu.com", "xiaohongshu.com", "xhs.cn"];
 const FETCH_TIMEOUT_MS = 20000;
+const MIN_CONTENT_LENGTH = 120;
 
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -77,6 +77,7 @@ async function fetchHtml(url: string, initHeaders?: Record<string, string>) {
         ...initHeaders,
       },
       cache: "no-store",
+      redirect: "follow",
       signal: controller.signal,
     });
 
@@ -95,12 +96,38 @@ async function fetchHtml(url: string, initHeaders?: Record<string, string>) {
   }
 }
 
+async function fetchHtmlWithStrategies(url: string) {
+  const headerStrategies: Array<Record<string, string> | undefined> = [
+    undefined,
+    {
+      Referer: url,
+      "Upgrade-Insecure-Requests": "1",
+    },
+    {
+      Referer: "https://www.google.com/",
+      Pragma: "no-cache",
+      "Cache-Control": "no-cache",
+    },
+  ];
+
+  for (const headers of headerStrategies) {
+    try {
+      return await fetchHtml(url, headers);
+    } catch {
+      // 继续尝试下一组请求头
+    }
+  }
+
+  throw new Error("抓取失败");
+}
+
 function pickTitleFromCheerio(html: string, fallbackUrl: string) {
   const $ = load(html);
   const raw =
     $('meta[property="og:title"]').attr("content") ||
     $('meta[name="twitter:title"]').attr("content") ||
     $('meta[itemprop="headline"]').attr("content") ||
+    $("h1").first().text() ||
     $("title").first().text() ||
     "";
 
@@ -121,6 +148,12 @@ function pickMainTextFromCheerio(html: string) {
     ".Post-RichTextContainer",
     ".note-content",
     ".content",
+    ".article",
+    "[class*='article']",
+    "[class*='content']",
+    "[class*='post']",
+    "[id*='content']",
+    ".markdown-body",
   ];
 
   for (const selector of selectors) {
@@ -132,6 +165,16 @@ function pickMainTextFromCheerio(html: string) {
     });
   }
 
+  const paragraphText = normalizeText(
+    $("p")
+      .map((_, element) => $(element).text())
+      .get()
+      .join("\n"),
+  );
+  if (paragraphText.length > 80) {
+    candidates.push(paragraphText);
+  }
+
   const bodyText = normalizeText($("body").text());
   if (bodyText.length > 80) {
     candidates.push(bodyText);
@@ -141,55 +184,92 @@ function pickMainTextFromCheerio(html: string) {
   return best.slice(0, 12000).trim();
 }
 
-function parseHtmlToContent(html: string, sourceUrl: string): ExtractedContent {
-  const title = pickTitleFromCheerio(html, sourceUrl);
-  const content = pickMainTextFromCheerio(html);
+function pickFallbackTextFromMeta(html: string, sourceUrl: string) {
+  const $ = load(html);
+  const metaDescription =
+    $('meta[property="og:description"]').attr("content") ||
+    $('meta[name="twitter:description"]').attr("content") ||
+    $('meta[name="description"]').attr("content") ||
+    "";
 
-  if (!content) {
-    throw new Error("未提取到正文内容");
+  const heading = $("h1").first().text() || $("h2").first().text() || "";
+
+  const paragraph = $("p")
+    .map((_, element) => normalizeText($(element).text()))
+    .get()
+    .filter((item) => item.length > 10)
+    .slice(0, 8)
+    .join("\n");
+
+  const fallback = [metaDescription, heading, paragraph]
+    .map((item) => normalizeText(item))
+    .filter(Boolean)
+    .join("\n\n");
+
+  if (fallback.length >= 40) {
+    return fallback.slice(0, 12000);
   }
 
-  return { title, content };
+  return `页面可访问，但正文提取有限。来源：${sourceUrl}`;
+}
+
+function parseHtmlToContent(html: string, sourceUrl: string): ExtractedContent {
+  const title = pickTitleFromCheerio(html, sourceUrl);
+  let content = pickMainTextFromCheerio(html);
+
+  if (content.length < MIN_CONTENT_LENGTH) {
+    const fallbackText = pickFallbackTextFromMeta(html, sourceUrl);
+    if (fallbackText.length > content.length) {
+      content = fallbackText;
+    }
+  }
+
+  if (!content.trim()) {
+    content = `页面可访问，但正文提取有限。来源：${sourceUrl}`;
+  }
+
+  return { title, content: content.slice(0, 12000).trim() };
 }
 
 function buildScrapeDoUrl(originalUrl: string, token: string) {
-  return `http://api.scrape.do/?url=${encodeURIComponent(originalUrl)}&token=${encodeURIComponent(
+  return `https://api.scrape.do/?url=${encodeURIComponent(originalUrl)}&token=${encodeURIComponent(
     token,
   )}&render_js=true&premium_proxy=true`;
 }
 
 async function extractViaDirectFetch(url: string): Promise<ExtractedContent> {
-  const html = await fetchHtml(url);
+  const html = await fetchHtmlWithStrategies(url);
   return parseHtmlToContent(html, url);
 }
 
 async function extractViaScrapeDo(url: string, token: string): Promise<ExtractedContent> {
   const scrapeDoUrl = buildScrapeDoUrl(url, token);
-  const html = await fetchHtml(scrapeDoUrl);
+  const html = await fetchHtmlWithStrategies(scrapeDoUrl);
   return parseHtmlToContent(html, url);
 }
 
 export async function extractMainContent(url: string): Promise<ExtractedContent> {
-  const enableScrapeDo = false;
+  const token = process.env.SCRAPE_DO_API_TOKEN?.trim();
 
-  if (enableScrapeDo && isScrapeDoTarget(url)) {
-    const token = process.env.SCRAPE_DO_API_TOKEN?.trim();
-
-    if (token) {
-      try {
-        return await extractViaScrapeDo(url, token);
-      } catch (error) {
-        console.error("[extractMainContent] Scrape.do 抓取失败，回退原生 fetch:", error);
-      }
-    } else {
-      console.error("[extractMainContent] SCRAPE_DO_API_TOKEN 未配置，回退原生 fetch");
+  if (token && isScrapeDoTarget(url)) {
+    try {
+      return await extractViaScrapeDo(url, token);
+    } catch (error) {
+      console.error("[extractMainContent] Scrape.do 抓取失败，回退原生 fetch:", error);
     }
   }
 
   try {
     return await extractViaDirectFetch(url);
   } catch (error) {
-    console.error("[extractMainContent] 原生 fetch 抓取失败:", error);
-    throw new Error(EXTRACTION_FAIL_MESSAGE);
+    console.error("[extractMainContent] 原生抓取失败，返回降级内容:", error);
+    return {
+      title: getFallbackTitle(url),
+      content: `页面可能启用了动态渲染或反爬策略，未能完整抓取正文。
+
+原始链接：${url}
+
+你仍可以继续让 AI 总结当前可得信息；如果结果不理想，建议手动复制正文后再粘贴。`,
+    };
   }
 }

@@ -31,15 +31,11 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "处理失败";
-    if (message.includes("提取失败")) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "提取失败，该平台反爬较强，请手动复制正文后粘贴到输入框",
-        },
-        { status: 500 },
-      );
-    }
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: message || "当前页面抓取受限，请稍后重试；也可手动复制正文后再解析。",
+      },
+      { status: 500 },
+    );
   }
 }
