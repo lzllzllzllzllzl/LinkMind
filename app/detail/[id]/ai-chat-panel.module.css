@@ -1,0 +1,90 @@
+.panel {
+  background: #ffffff;
+  border: 1px solid #eceef4;
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 12px 40px rgba(126, 34, 206, 0.08);
+  display: grid;
+  gap: 10px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.titleRow h3 {
+  font-size: 14px;
+  font-weight: 800;
+  color: #7e22ce;
+}
+
+.titleRow span {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.panel textarea {
+  width: 100%;
+  resize: vertical;
+  border: none;
+  outline: none;
+  border-radius: 12px;
+  background: #f3f4f6;
+  padding: 12px;
+  color: #374151;
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.actions button {
+  border: none;
+  background: #6200a9;
+  color: #fff;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.actions button:disabled {
+  background: #c4b5fd;
+  cursor: not-allowed;
+}
+
+.error {
+  color: #ba1a1a;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.answer {
+  border: 1px solid #e9ddf6;
+  border-radius: 12px;
+  background: #faf8ff;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.answer h4 {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: #6d28d9;
+}
+
+.answer p {
+  margin: 0;
+  color: #4b5563;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}

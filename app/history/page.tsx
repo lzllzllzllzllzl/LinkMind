@@ -1,0 +1,314 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
+import { useAuth } from "@/app/providers/auth-provider";
+import { createClient } from "@/utils/supabase/client";
+
+import styles from "./page.module.css";
+
+import { Markdown } from "@/components/markdown";
+
+type BookmarkItem = {
+  id: string;
+  user_id: string | null;
+  title: string;
+  url: string;
+  content: string;
+  summary: string;
+  outline: string[];
+  tags: string[] | null;
+  created_at: string;
+};
+
+const ACCENT_CLASSES = [styles.accentPrimary, styles.accentSecondary, styles.accentTertiary];
+const LABEL_CLASSES = [styles.labelPrimary, styles.labelSecondary, styles.labelTertiary];
+const SUMMARY_CLASSES = [styles.summaryPrimary, styles.summarySecondary, styles.summaryTertiary];
+
+function formatRelativeTime(dateString: string, index: number) {
+  if (index === 0) return "刚刚";
+  const timestamp = new Date(dateString).getTime();
+  if (Number.isNaN(timestamp)) return "未知时间";
+
+  const diff = Date.now() - timestamp;
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (diff < hour) {
+    return `${Math.max(1, Math.floor(diff / minute))} 分钟前`;
+  }
+
+  if (diff < day) {
+    return `${Math.floor(diff / hour)} 小时前`;
+  }
+
+  if (diff < day * 2) {
+    return "昨天";
+  }
+
+  return new Date(dateString).toLocaleDateString("zh-CN");
+}
+
+function getDomainLabel(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, "");
+  } catch {
+    return "来源链接";
+  }
+}
+
+function deriveDisplayTitle(item: Pick<BookmarkItem, "title" | "summary" | "url">) {
+  const rawTitle = item.title?.trim() || "";
+  const isExtractorFallback = /^未能提取网页标题/.test(rawTitle);
+  const looksLikeUrl =
+    /^https?:\/\//i.test(rawTitle) || /^[\w.-]+\.[a-z]{2,}(?:[/:?#]|$)/i.test(rawTitle);
+
+  if (rawTitle && !isExtractorFallback && !looksLikeUrl) {
+    return rawTitle;
+  }
+
+  const summaryHead = (item.summary || "")
+    .replace(/\s+/g, " ")
+    .split(/[。！？.!?]/)[0]
+    ?.trim();
+
+  if (summaryHead && summaryHead.length >= 8) {
+    return summaryHead.slice(0, 36);
+  }
+
+  return `${getDomainLabel(item.url)} 的内容解读`;
+}
+
+function TopBar({
+  userEmail,
+  showAuthLink,
+}: {
+  userEmail?: string | null;
+  showAuthLink?: boolean;
+}) {
+  return (
+    <header className={styles.topNav}>
+      <div className={styles.topInner}>
+        <div className={styles.topLeft}>
+          <span className={styles.brand}>LinkMind</span>
+          <nav className={styles.nav}>
+            <Link href="/">首页</Link>
+            <span className={styles.active}>知识库</span>
+          </nav>
+        </div>
+
+        <div className={styles.topRight}>
+          <div className={styles.searchBadge}>搜索知识库</div>
+
+          <Link href="/" className={styles.newLinkBtn}>
+            新建链接
+          </Link>
+
+          {showAuthLink ? (
+            <Link href="/auth" className={styles.authLink}>
+              登录
+            </Link>
+          ) : (
+            <div className={styles.avatar} aria-hidden="true">
+              {userEmail?.[0]?.toUpperCase() || "我"}
+            </div>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+export default function HistoryPage() {
+  const { authReady, isAuthenticated, user, userEmail } = useAuth();
+  const [list, setList] = useState<BookmarkItem[]>([]);
+  const [listLoading, setListLoading] = useState(false);
+  const [listError, setListError] = useState("");
+
+  useEffect(() => {
+    if (!authReady) return;
+
+    if (!isAuthenticated || !user) {
+      return;
+    }
+
+    let active = true;
+
+    const loadBookmarks = async () => {
+      setListLoading(true);
+      setListError("");
+
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("bookmarks")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (!active) return;
+
+      if (error) {
+        setListError(error.message);
+        setList([]);
+      } else {
+        setList((data ?? []) as BookmarkItem[]);
+      }
+
+      setListLoading(false);
+    };
+
+    void loadBookmarks();
+
+    return () => {
+      active = false;
+    };
+  }, [authReady, isAuthenticated, user]);
+
+  if (!authReady) {
+    return (
+      <div className={styles.page}>
+        <TopBar showAuthLink />
+        <main className={styles.main}>
+          <section className={styles.emptyStateCard}>
+            <div className={styles.emptyIcon}>…</div>
+            <h3>正在同步登录状态</h3>
+            <p>请稍候，正在加载您的知识库。</p>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || !user) {
+    return (
+      <div className={styles.page}>
+        <TopBar showAuthLink />
+        <main className={styles.main}>
+          <section className={styles.header}>
+            <div>
+              <h1>知识库</h1>
+              <p>探索您收藏的智慧结晶与 AI 深度洞察</p>
+            </div>
+          </section>
+
+          <section className={styles.emptyStateCard}>
+            <div className={styles.emptyIcon}>用户</div>
+            <h3>请先登录查看</h3>
+            <p>登录后即可查看你保存的链接、摘要与结构化洞察。</p>
+            <Link href="/auth?next=/history">去登录</Link>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  if (listError) {
+    return (
+      <div className={styles.page}>
+        <TopBar userEmail={userEmail || user.email} />
+        <main className={styles.main}>
+          <section className={styles.emptyStateCard}>
+            <div className={styles.emptyIcon}>!</div>
+            <h3>加载失败</h3>
+            <p>{listError}</p>
+            <Link href="/">返回首页</Link>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.page}>
+      <TopBar userEmail={userEmail || user.email} />
+
+      <main className={styles.main}>
+        <section className={styles.header}>
+          <div>
+            <h1>知识库</h1>
+            <p>探索您收藏的智慧结晶与 AI 深度洞察</p>
+          </div>
+
+          <div className={styles.headerActions}>
+            <button className={styles.actionBtn}>筛选</button>
+            <button className={styles.actionBtn}>最近使用</button>
+          </div>
+        </section>
+
+        {listLoading ? (
+          <section className={styles.emptyStateCard}>
+            <div className={styles.emptyIcon}>…</div>
+            <h3>加载中</h3>
+            <p>正在读取你的知识库内容。</p>
+          </section>
+        ) : (
+          <ul className={styles.grid}>
+            {list.map((item, index) => {
+              const displayTitle = deriveDisplayTitle(item);
+              return (
+                <li
+                  key={item.id}
+                  className={`${styles.card} ${ACCENT_CLASSES[index % ACCENT_CLASSES.length]}`}
+                >
+                  <div className={styles.cardBody}>
+                    <div className={styles.cardHead}>
+                      <span
+                        className={`${styles.label} ${LABEL_CLASSES[index % LABEL_CLASSES.length]}`}
+                      >
+                        #{(item.tags?.[0] || "知识").slice(0, 8)}
+                      </span>
+                      <span className={styles.time}>{formatRelativeTime(item.created_at, index)}</span>
+                    </div>
+
+                    <Link href={`/detail/${item.id}`} className={styles.title} title={displayTitle}>
+                      {displayTitle}
+                    </Link>
+
+                    <div
+                      className={`${styles.summaryBox} ${
+                        SUMMARY_CLASSES[index % SUMMARY_CLASSES.length]
+                      }`}
+                    >
+                      <Markdown className={styles.summary}>{item.summary || "暂无摘要内容"}</Markdown>
+                    </div>
+
+                    <div className={styles.tags}>
+                      {(item.tags || []).slice(0, 3).map((tag) => (
+                        <span key={tag}>#{tag}</span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className={styles.cardFoot}>
+                    <div className={styles.footUrl}>
+                      <span className={styles.sourceText}>来源</span>
+                      <span title={item.url}>{getDomainLabel(item.url)}</span>
+                    </div>
+                    <Link href={`/detail/${item.id}`} className={styles.moreBtn} aria-label="查看详情">
+                      详情
+                    </Link>
+                  </div>
+                </li>
+              );
+            })}
+
+            <li className={styles.emptyCardTile}>
+              <div className={styles.emptyIcon}>＋</div>
+              <h3>开始新的探索</h3>
+              <p>粘贴任何链接，让 AI 为您提取深度洞察</p>
+              <Link href="/">立即添加</Link>
+            </li>
+          </ul>
+        )}
+
+        {list.length > 0 ? (
+          <div className={styles.loadMoreWrap}>
+            <button className={styles.loadMoreBtn}>加载更多记录</button>
+          </div>
+        ) : null}
+      </main>
+    </div>
+  );
+}

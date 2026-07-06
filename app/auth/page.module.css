@@ -1,0 +1,144 @@
+.page {
+  min-height: 100vh;
+  background: #f8f9fa;
+  color: #191c1d;
+}
+
+.topNav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 40px rgba(126, 34, 206, 0.06);
+}
+
+.topInner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 14px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.brand {
+  font-size: 28px;
+  font-weight: 800;
+  color: #6d28d9;
+  letter-spacing: -0.03em;
+}
+
+.nav {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.nav a {
+  color: #6b7280;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.main {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 60px 20px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #eceef4;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 12px 40px rgba(126, 34, 206, 0.08);
+  display: grid;
+  gap: 10px;
+}
+
+.card h1 {
+  font-size: 30px;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  color: #111827;
+}
+
+.card p {
+  color: #5b6473;
+  line-height: 1.6;
+}
+
+.form {
+  margin-top: 8px;
+  display: grid;
+  gap: 12px;
+}
+
+.form label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #374151;
+}
+
+.form input {
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+}
+
+.form input:focus {
+  border-color: #c4b5fd;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.2);
+}
+
+.form button {
+  border: none;
+  border-radius: 10px;
+  background: #7e22ce;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  min-height: 42px;
+  cursor: pointer;
+}
+
+.form button:disabled {
+  background: #c4b5fd;
+  cursor: not-allowed;
+}
+
+.error {
+  color: #ba1a1a;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.success {
+  color: #046c4e;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.switchRow {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #6b7280;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.switchRow button {
+  border: none;
+  background: transparent;
+  color: #6d28d9;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}

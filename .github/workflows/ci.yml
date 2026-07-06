@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  # 占位环境变量——避免静态预渲染阶段因缺失 Supabase 配置而中断构建
+  # 真实值在 Vercel 项目的 Environment Variables 中配置
+  NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder_anon_key_for_ci
+  SUPABASE_URL: https://placeholder.supabase.co
+  SUPABASE_SERVICE_ROLE_KEY: placeholder_service_role_key_for_ci
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build-and-check
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run bookmark-store tests
+        run: npx tsx tests/bookmark-store.test.ts
+        env:
+          CI: true
+
+      - name: Run content-extractor tests
+        run: npx tsx tests/content-extractor.test.ts
+        env:
+          CI: true
+
+  health-check:
+    runs-on: ubuntu-latest
+    needs: build-and-check
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run health check
+        run: python3 scripts/health-check.py
+        env:
+          HEALTH_CHECK_URL: ${{ secrets.VERCEL_URL }}
