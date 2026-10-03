@@ -6,7 +6,6 @@ import { useState } from "react";
 
 import { useAuth } from "@/app/providers/auth-provider";
 import type { ProcessResult } from "@/types/bookmark";
-import { createClient } from "@/utils/supabase/client";
 
 import styles from "./page.module.css";
 
@@ -84,57 +83,41 @@ export default function Home() {
         return;
       }
 
-      const supabase = createClient();
-
       const tags = Array.isArray(processed.tags) && processed.tags.length > 0 ? processed.tags : ["未分类"];
 
-      const { data: inserted, error: insertError } = await supabase
-        .from("bookmarks")
-        .insert({
-          user_id: user.id,
+      const saveResponse = await fetch("/api/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           title: processed.title,
           url: processed.url,
           content: processed.content,
           summary: processed.summary,
           outline: Array.isArray(processed.outline) ? processed.outline : [],
           tags,
-        })
-        .select("id")
-        .single();
+        }),
+      });
 
-      if (insertError || !inserted) {
-        const isDuplicateUrl =
-          insertError?.code === "23505" ||
-          insertError?.message?.includes("bookmarks_url_key") ||
-          insertError?.message?.includes("duplicate key value");
+      const saved = (await saveResponse.json()) as {
+        id?: string;
+        duplicated?: boolean;
+        error?: string;
+      };
 
-        if (isDuplicateUrl) {
-          const { data: existed } = await supabase
-            .from("bookmarks")
-            .select("id")
-            .eq("url", processed.url)
-            .eq("user_id", user.id)
-            .maybeSingle();
-
-          if (existed?.id) {
-            setSavedId(existed.id);
-            alert("该链接已存在于你的知识库，已为你定位到已有记录");
-            setLoadingMessage("已复用已有记录，可直接在当前页继续问 AI");
-            setLoadingStage(4);
-            return;
-          }
-
-          alert("该链接已存在（可能由唯一索引限制），请勿重复保存");
-          return;
-        }
-
-        console.error("保存失败:", insertError);
-        alert(`保存失败：${insertError?.message || "未知错误"}`);
+      if (!saveResponse.ok || !saved.id) {
+        console.error("保存失败:", saved.error);
+        alert(`保存失败：${saved.error || "未知错误"}`);
         return;
       }
 
-      setSavedId(inserted.id);
-      alert("已保存到知识库");
+      setSavedId(saved.id);
+
+      if (saved.duplicated) {
+        alert("该链接已存在于你的知识库，已为你定位到已有记录");
+      } else {
+        alert("已保存到知识库");
+      }
+
       setLoadingMessage("保存完成，可直接在当前页继续问 AI");
       setLoadingStage(4);
     } catch (e) {

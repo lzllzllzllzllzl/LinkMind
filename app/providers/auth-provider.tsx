@@ -1,13 +1,11 @@
 "use client";
 
-import type { Session, User } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-import { createClient } from "@/utils/supabase/client";
+import type { AuthUser } from "@/types/auth";
 
 type AuthContextValue = {
-  session: Session | null;
-  user: User | null;
+  user: AuthUser | null;
   isAuthenticated: boolean;
   userEmail: string;
   authReady: boolean;
@@ -18,74 +16,43 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [supabase] = useState(() => createClient());
-  const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
 
-  const applySession = useCallback((nextSession: Session | null) => {
-    setSession(nextSession);
-    setUser(nextSession?.user ?? null);
-    setAuthReady(true);
+  const refreshAuth = useCallback(async () => {
+    try {
+      const response = await fetch("/api/auth/me", { cache: "no-store" });
+      const data = (await response.json()) as { user?: AuthUser | null };
+      setUser(data.user ?? null);
+    } catch {
+      setUser(null);
+    } finally {
+      setAuthReady(true);
+    }
   }, []);
 
-  const refreshAuth = useCallback(async () => {
-    const { data, error } = await supabase.auth.getSession();
-
-    if (error) {
-      setSession(null);
-      setUser(null);
-      setAuthReady(true);
-      return;
-    }
-
-    applySession(data.session);
-  }, [applySession, supabase]);
-
   useEffect(() => {
-    let mounted = true;
-
-    const applyIfMounted = (nextSession: Session | null) => {
-      if (!mounted) return;
-      applySession(nextSession);
-    };
-
-    const init = async () => {
-      const {
-        data: { session: initialSession },
-      } = await supabase.auth.getSession();
-
-      applyIfMounted(initialSession);
-    };
-
-    void init();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      applyIfMounted(nextSession);
-    });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, [applySession, supabase]);
+    void refreshAuth();
+  }, [refreshAuth]);
 
   const signOut = useCallback(async () => {
-    const { error } = await supabase.auth.signOut();
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST" });
 
-    if (!error) {
-      applySession(null);
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string };
+        return { message: data.error || "退出失败" };
+      }
+
+      setUser(null);
       return null;
+    } catch (e) {
+      return { message: e instanceof Error ? e.message : "退出失败" };
     }
-
-    return { message: error.message };
-  }, [applySession, supabase]);
+  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      session,
       user,
       isAuthenticated: Boolean(user),
       userEmail: user?.email || "",
@@ -93,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshAuth,
       signOut,
     }),
-    [authReady, refreshAuth, session, signOut, user],
+    [authReady, refreshAuth, signOut, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

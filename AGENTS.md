@@ -10,7 +10,7 @@
 LinkMind 是 AI 驱动的内容收藏与知识整理工具，技术栈：
 - **框架**：Next.js 16 App Router + React 19 + TypeScript 严格模式
 - **样式**：CSS Modules（项目级 `app/globals.css` + 模块级 `*.module.css`）
-- **后端**：Supabase（PostgreSQL + Auth + RLS）
+- **后端**：Neon（Serverless PostgreSQL）+ 自建会话认证
 - **AI**：DeepSeek API（优先） / OpenAI 兼容接口（备选）
 - **部署**：Vercel
 
@@ -60,6 +60,7 @@ LinkMind 是 AI 驱动的内容收藏与知识整理工具，技术栈：
 ```
 app/                    # Next.js App Router
 ├── api/               # API 路由（Serverless Functions）
+│   ├── auth/          # 注册 / 登录 / 登出 / 会话
 │   ├── process/       # POST — 抓取 + AI 解析
 │   ├── save/          # POST — 保存收藏
 │   ├── bookmarks/     # GET — 列表 / 详情
@@ -73,14 +74,16 @@ app/                    # Next.js App Router
 
 lib/                   # 核心业务逻辑（框架无关）
 ├── ai.ts              # AI 调用（多后端适配）
-├── bookmark-store.ts  # 书签 CRUD（Supabase + 内存降级）
+├── bookmark-store.ts  # 书签 CRUD（Neon + 内存降级）
 ├── content-extractor.ts # 网页正文提取
-└── supabase.ts        # Supabase 客户端工厂
+├── auth.ts            # 认证核心（scrypt 哈希 / 会话）
+└── db.ts              # Neon 客户端工厂
 
 components/            # 可复用 UI 组件
 types/                 # TypeScript 类型定义
-utils/supabase/        # Supabase 客户端变体
-supabase/              # 数据库 Schema
+utils/auth.ts          # 服务端会话辅助（getCurrentUser）
+db/schema.sql          # 数据库 Schema
+scripts/               # apply-schema.ts / db-smoke.ts
 ```
 
 ### 3.2 数据流
@@ -97,17 +100,18 @@ content-extractor.ts   lib/ai.ts
     ↓
 POST /api/save
     ↓
-lib/bookmark-store.ts → Supabase INSERT
+lib/bookmark-store.ts → Neon Postgres INSERT（ON CONFLICT 去重）
     ↓
 返回 BookmarkRecord（含 id）
 ```
 
 ### 3.3 认证流程
 
-- 客户端通过 `utils/supabase/client.ts` 创建 Supabase 客户端
-- API 路由通过 `utils/supabase/server.ts` 创建带 Cookie 的服务端客户端
-- 用户状态通过 `AuthProvider`（Context）全局共享
-- 受保护接口（如 `/api/chat`）必须验证 `user`
+- 认证为自建会话方案：注册/登录写入 `users` 表并创建 `sessions` 记录（`lib/auth.ts`）
+- 客户端持有 httpOnly Cookie（`lm_session`），不直接访问数据库
+- 服务端通过 `utils/auth.ts` 的 `getCurrentUser()` 从 Cookie 还原当前用户
+- 用户状态通过 `AuthProvider`（Context，经 `/api/auth/me`）全局共享
+- 受保护接口（如 `/api/chat`）必须验证 `user`，所有查询按 `user_id` 过滤
 
 ### 3.4 多后端 AI 策略
 
@@ -122,10 +126,7 @@ lib/bookmark-store.ts → Supabase INSERT
 
 | 变量名 | 用途 | 必需 | 客户端可见 |
 | --- | --- | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase 项目 URL | ✅ | ✅ |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 匿名 Key | ✅ | ✅ |
-| `SUPABASE_URL` | 服务端 Supabase URL | ✅ | ❌ |
-| `SUPABASE_SERVICE_ROLE_KEY` | 服务端管理 Key | ✅ | ❌ |
+| `DATABASE_URL` | Neon Postgres 连接串（建议 pooled） | ✅ | ❌ |
 | `DEEPSEEK_API_KEY` | DeepSeek API Key | 二选一 | ❌ |
 | `DEEPSEEK_BASE_URL` | DeepSeek 端点 | ❌ | ❌ |
 | `DEEPSEEK_MODEL` | DeepSeek 模型 | ❌ | ❌ |
@@ -172,8 +173,8 @@ npm run lint         # ESLint 检查
 
 ### 6.4 禁止事项
 
-- ❌ 不将 API Key 提交到 Git
-- ❌ 不在客户端组件调用 `lib/supabase.ts` 的管理端函数
+- ❌ 不将 API Key 或 DATABASE_URL 提交到 Git
+- ❌ 不在客户端组件直连数据库（所有查询走服务端 API）
 - ❌ 不使用 `any` 类型（除非有显式注释说明原因）
 - ❌ 不绕过 user_id 隔离访问其他用户数据
 - ❌ 不在 `lib/` 中导入 Next.js 特有模块

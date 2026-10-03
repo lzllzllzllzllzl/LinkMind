@@ -1,6 +1,6 @@
 # LinkMind — 系统架构文档
 
-> 版本：v1.0 · 最后更新：2026-07-06
+> 版本：v2.0 · 最后更新：2026-10-03
 
 ## 1. 系统总览
 
@@ -16,19 +16,18 @@ LinkMind 是基于 Next.js 16 的全栈应用，部署在 Vercel 平台。
 │       └──────────────┼──────────────────┘           │
 │              AuthProvider (Context)                  │
 └──────────────────────┼──────────────────────────────┘
-                       │ HTTP (Fetch API)
+                       │ HTTP (Fetch API, httpOnly Cookie)
 ┌──────────────────────┼──────────────────────────────┐
 │  Vercel Serverless   │                               │
-│  ┌───────────────────┼────────────────────────────┐  │
-│  │  /api/process     │   /api/save   /api/chat    │  │
+│  │ /api/auth/*  /api/process  /api/save  /api/chat  │
 │  └───────────────────┼────────────────────────────┘  │
 └──────────────────────┼──────────────────────────────┘
                        │
         ┌──────────────┼──────────────┐
         │              │              │
    ┌────▼────┐   ┌─────▼─────┐  ┌────▼────┐
-   │DeepSeek/│   │ Supabase  │  │ External│
-   │OpenAI   │   │(DB+Auth)  │  │ 网页    │
+   │DeepSeek/│   │   Neon    │  │ External│
+   │OpenAI   │   │(Postgres) │  │ 网页    │
    └─────────┘   └───────────┘  └─────────┘
 ```
 
@@ -48,10 +47,14 @@ LinkMind 是基于 Next.js 16 的全栈应用，部署在 Vercel 平台。
 
 | 路由 | 方法 | 输入 | 输出 | 依赖 |
 | --- | --- | --- | --- | --- |
+| `/api/auth/signup` | POST | `{ email, password }` | `{ user }` + Set-Cookie | `auth`, `db` |
+| `/api/auth/login` | POST | `{ email, password }` | `{ user }` + Set-Cookie | `auth`, `db` |
+| `/api/auth/logout` | POST | - | `{ ok }` + 清除 Cookie | `auth`, `db` |
+| `/api/auth/me` | GET | - | `{ user \| null }` | `utils/auth`, `db` |
 | `/api/process` | POST | `{ url }` | `ProcessResult` | `content-extractor`, `ai` |
-| `/api/save` | POST | `SaveBookmarkInput` | `BookmarkRecord` | `bookmark-store` |
-| `/api/bookmarks` | GET | `?id=` (可选) | `BookmarkRecord[]` | `bookmark-store` |
-| `/api/chat` | POST | `{ bookmarkId, question }` | `{ answer }` | `auth`, `ai` |
+| `/api/save` | POST | `SaveBookmarkInput` | `BookmarkRecord & { duplicated }` | `utils/auth`, `bookmark-store` |
+| `/api/bookmarks` | GET | `?id=` (可选) | `BookmarkRecord[]` | `utils/auth`, `bookmark-store` |
+| `/api/chat` | POST | `{ bookmarkId, question }` | `{ answer }` | `utils/auth`, `bookmark-store`, `ai` |
 
 ### 2.3 业务逻辑层（lib/）
 
@@ -60,15 +63,17 @@ LinkMind 是基于 Next.js 16 的全栈应用，部署在 Vercel 平台。
 | `lib/ai.ts` | AI 调用适配 | `generateStructuredContent()`, `answerQuestionAboutContent()` |
 | `lib/bookmark-store.ts` | 书签 CRUD | `saveBookmark()`, `getAllBookmarks()`, `getBookmarkById()` |
 | `lib/content-extractor.ts` | 网页正文提取 | `extractMainContent()` |
-| `lib/supabase.ts` | 客户端工厂 | `getSupabaseAdmin()`, `hasSupabaseConfig()` |
+| `lib/auth.ts` | 认证核心（框架无关） | `registerUser()`, `authenticateUser()`, `createSession()`, `getSessionUser()` |
+| `lib/db.ts` | Neon 客户端工厂 | `getDb()`, `hasDbConfig()` |
+| `utils/auth.ts` | 服务端会话辅助 | `getCurrentUser()` |
 
 ### 2.4 数据层
 
 | 存储 | 用途 | 访问方式 |
 | --- | --- | --- |
-| Supabase (PostgreSQL) | 持久化书签数据 | `getSupabaseAdmin()` -- service_role 客户端 |
+| Neon (PostgreSQL) | 持久化用户/会话/书签数据 | `getDb()` -- Serverless HTTP 驱动 |
 | Memory Array | 开发降级存储 | 模块级 `memoryBookmarks` 数组 |
-| Cookie (Session) | 用户认证状态 | `next/headers` -> Supabase SSR 客户端 |
+| Cookie (Session) | 用户认证状态 | httpOnly Cookie → `sessions` 表 → `getCurrentUser()` |
 
 ## 3. 关键流程时序
 
@@ -95,28 +100,29 @@ Browser              /api/process                  External
 ### 3.2 收藏保存流程
 
 ```
-Browser              /api/save                Supabase
+Browser(已登录)       /api/save                 Neon
   │                      │                        │
   │ -- POST {bookmark} ->│                        │
+  │                      │ -- getCurrentUser()    │
+  │                      │   (Cookie → sessions)  │
   │                      │ -- validate fields     │
-  │                      │ -- getSupabaseAdmin()  │
-  │                      │ -- INSERT ----------->│
-  │                      │ <- BookmarkRecord -----│
+  │                      │ -- INSERT (ON CONFLICT)─│
+  │                      │ <- record / duplicated ─│
   │ <- saved record -----│                        │
 ```
 
-如果 `hasSupabaseConfig()` 返回 false，`bookmark-store` 降级为内存存储。
+如果 `hasDbConfig()` 返回 false，`bookmark-store` 降级为内存存储。
 
 ### 3.3 AI 追问流程
 
 ```
-Browser (已登录)      /api/chat              Supabase    AI API
+Browser (已登录)      /api/chat               Neon       AI API
   │                      │                      │          │
   │ -- POST {id, q} ---->│                      │          │
-  │                      │ -- getUser() ------->│          │
-  │                      │ <- user --------------│          │
+  │                      │ -- getCurrentUser() →│          │
+  │                      │ <- user (401 若无)    │          │
   │                      │                      │          │
-  │                      │ -- SELECT bookmark -->│         │
+  │                      │ -- SELECT bookmark ->│          │
   │                      │   (WHERE user_id =)  │          │
   │                      │ <- bookmark ----------│          │
   │                      │                      │          │
@@ -131,7 +137,7 @@ Browser (已登录)      /api/chat              Supabase    AI API
 ```
 app/page.tsx ---------> lib/ai.ts ---------> DeepSeek / OpenAI
        │                    ^
-       +---> lib/bookmark-store.ts -----> lib/supabase.ts --> Supabase
+       +---> lib/bookmark-store.ts -----> lib/db.ts --> Neon Postgres
                     ^
 app/api/save/route.ts ---+
 
@@ -139,20 +145,21 @@ app/api/process/route.ts --> lib/content-extractor.ts --> cheerio + fetch
                       +--> lib/ai.ts
 
 app/api/chat/route.ts --> lib/ai.ts
-                  +--> utils/supabase/server.ts
+                  +--> utils/auth.ts --> lib/auth.ts
 
-app/providers/auth-provider.tsx --> utils/supabase/client.ts
+app/providers/auth-provider.tsx --> /api/auth/* (fetch)
+app/detail/[id]/page.tsx ------> utils/auth.ts --> lib/auth.ts
 ```
 
 ## 5. 安全架构
 
 | 层面 | 措施 |
 | --- | --- |
-| API Key | 仅存服务端环境变量，永不暴露给客户端 |
-| 用户隔离 | 所有数据查询带 `user_id` 过滤 |
-| Auth | Supabase Auth + JWT，服务端验证 |
-| Cookie | HttpOnly + SameSite，getAll/setAll 通过 SSR 客户端管理 |
-| Input | URL 格式校验；bookmark 字段类型校验 |
+| API Key / DATABASE_URL | 仅存服务端环境变量，永不暴露给客户端 |
+| 用户隔离 | 所有数据查询带 `user_id` 过滤，接口先验会话 |
+| Auth | 自建会话：scrypt 加盐哈希 + 随机 token，服务端查 `sessions` 表验证 |
+| Cookie | HttpOnly + Secure（生产）+ SameSite=Lax，30 天有效期 |
+| Input | URL 格式校验；bookmark 字段类型校验；邮箱/密码强度校验 |
 
 ## 6. 部署架构
 
@@ -194,4 +201,4 @@ Production URL
 
 ---
 
-> 维护者：LinkMind 团队 · 编辑日期：2026-07-06
+> 维护者：LinkMind 团队 · 编辑日期：2026-10-03

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { useAuth } from "@/app/providers/auth-provider";
-import { createClient } from "@/utils/supabase/client";
 
 import styles from "./page.module.css";
 
@@ -140,23 +139,28 @@ export default function HistoryPage() {
       setListLoading(true);
       setListError("");
 
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("bookmarks")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
+      try {
+        const response = await fetch("/api/bookmarks", { cache: "no-store" });
+        const data = (await response.json()) as BookmarkItem[] | { error?: string };
 
-      if (!active) return;
+        if (!active) return;
 
-      if (error) {
-        setListError(error.message);
+        if (!response.ok) {
+          const message = (data as { error?: string }).error || "加载失败";
+          setListError(message);
+          setList([]);
+        } else {
+          setList(data as BookmarkItem[]);
+        }
+      } catch (e) {
+        if (!active) return;
+        setListError(e instanceof Error ? e.message : "请求失败");
         setList([]);
-      } else {
-        setList((data ?? []) as BookmarkItem[]);
+      } finally {
+        if (active) {
+          setListLoading(false);
+        }
       }
-
-      setListLoading(false);
     };
 
     void loadBookmarks();

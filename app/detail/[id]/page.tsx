@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Markdown } from "@/components/markdown";
-import { createClient } from "@/utils/supabase/server";
+import { getBookmarkById } from "@/lib/bookmark-store";
+import type { BookmarkRecord } from "@/types/bookmark";
+import { getCurrentUser } from "@/utils/auth";
 
 import AIChatPanel from "./ai-chat-panel";
 import styles from "./page.module.css";
@@ -182,29 +184,26 @@ function buildWordCloudTokens(item: BookmarkItem, displayTitle: string): WordClo
 
 export default async function DetailPage({ params }: DetailPageProps) {
   const { id } = await params;
-  const supabase = await createClient();
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
 
-  if (userError || !user) {
+  if (!user) {
     notFound();
   }
 
-  const { data, error } = await supabase
-    .from("bookmarks")
-    .select("*")
-    .eq("id", id)
-    .eq("user_id", user.id)
-    .single();
+  let record: BookmarkRecord | null = null;
 
-  if (error || !data) {
+  try {
+    record = await getBookmarkById(id, user.id);
+  } catch (error) {
+    console.error("读取收藏失败:", error);
+  }
+
+  if (!record) {
     notFound();
   }
 
-  const item = data as BookmarkItem;
+  const item: BookmarkItem = record;
   const displayTitle = deriveDisplayTitle(item);
   const outlineItems = (item.outline || []).filter(Boolean);
   const tags = (item.tags || []).filter(Boolean);

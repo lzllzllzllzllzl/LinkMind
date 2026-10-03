@@ -24,7 +24,7 @@ LinkMind 是一款 AI 驱动的跨平台内容收藏与知识整理工具。用�
 | US-04 | 已登录用户 | 在详情页基于原文向 AI 提问 | 深入理解特定细节 | P0 |
 | US-05 | 已登录用户 | 在历史页浏览所有收藏 | 回顾和管理知识资产 | P1 |
 | US-06 | 未登录用户 | 使用邮箱注册/登录 | 保存个人收藏并跨设备同步 | P1 |
-| US-07 | 已登录用户 | 在未配置 Supabase 时使用内存存储 | 本地开发调试时不依赖外部服务 | P2 |
+| US-07 | 已登录用户 | 在未配置数据库时使用内存存储 | 本地开发调试时不依赖外部服务 | P2 |
 
 ## 4. 功能需求
 
@@ -46,8 +46,8 @@ LinkMind 是一款 AI 驱动的跨平台内容收藏与知识整理工具。用�
 
 ### 4.3 收藏保存（P0）
 
-- 持久化到 Supabase `bookmarks` 表
-- 未配置 Supabase 时降级为内存存储（仅开发模式）
+- 持久化到 Neon Postgres `bookmarks` 表
+- 未配置 DATABASE_URL 时降级为内存存储（仅开发模式）
 - 字段校验：url/title/content 必填；summary 为字符串；outline/tags 为数组
 
 ### 4.4 AI 追问（P0）
@@ -64,7 +64,7 @@ LinkMind 是一款 AI 驱动的跨平台内容收藏与知识整理工具。用�
 
 ### 4.6 认证（P1）
 
-- 邮箱注册/登录（Supabase Auth）
+- 邮箱注册/登录（自建会话认证，scrypt 加盐哈希 + httpOnly Cookie）
 - Session 持久化 + 跨页面状态同步
 - 登出功能
 
@@ -84,7 +84,7 @@ LinkMind 是一款 AI 驱动的跨平台内容收藏与知识整理工具。用�
 | --- | --- |
 | 框架 | Next.js 16 App Router + React 19 |
 | 样式 | CSS Modules（不使用 Tailwind / styled-components） |
-| 后端 | Supabase（PostgreSQL + Auth） |
+| 后端 | Neon（Serverless PostgreSQL）+ 自建会话认证 |
 | AI | DeepSeek-V4-Flash（默认）/ GPT-4o-mini（备选） |
 | 部署 | Vercel（自动触发 main 分支部署） |
 | 语言 | TypeScript 严格模式 |

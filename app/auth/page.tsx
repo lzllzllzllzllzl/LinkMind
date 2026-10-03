@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
 import { useAuth } from "@/app/providers/auth-provider";
-import { createClient } from "@/utils/supabase/client";
 
 import styles from "./page.module.css";
 
@@ -51,35 +50,22 @@ export default function AuthPage() {
     setLoading(true);
 
     try {
-      const supabase = createClient();
-
-      if (mode === "signin") {
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-
-        if (signInError) {
-          throw new Error(signInError.message);
-        }
-
-        await refreshAuth();
-        setSuccess("登录成功，正在进入系统...");
-        router.replace(nextPath);
-        return;
-      }
-
-      const { error: signUpError } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
+      const endpoint = mode === "signin" ? "/api/auth/login" : "/api/auth/signup";
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
       });
 
-      if (signUpError) {
-        throw new Error(signUpError.message);
+      const data = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(data.error || "操作失败");
       }
 
-      setSuccess("注册成功，请直接登录");
-      setMode("signin");
+      await refreshAuth();
+      setSuccess(mode === "signin" ? "登录成功，正在进入系统..." : "注册成功，正在进入系统...");
+      router.replace(nextPath);
     } catch (e) {
       setError(e instanceof Error ? e.message : "操作失败");
     } finally {

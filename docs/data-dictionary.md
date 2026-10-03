@@ -1,6 +1,6 @@
 # LinkMind — 数据字典
 
-> 版本：v1.0 · 最后更新：2026-07-06
+> 版本：v2.0 · 最后更新：2026-10-03
 
 本文档定义 LinkMind 项目中所有数据模型、字段含义、约束和关系。
 
@@ -15,27 +15,40 @@
 | 字段名 | 类型 | 约束 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `id` | `uuid` | PRIMARY KEY | `gen_random_uuid()` | 唯一标识 |
-| `user_id` | `uuid` | NULLABLE | `NULL` | 所属用户（未登录为 NULL） |
+| `user_id` | `uuid` | NULLABLE, FK → `users.id` | `NULL` | 所属用户（未登录为 NULL） |
 | `title` | `text` | NOT NULL | -- | 文章标题 |
 | `url` | `text` | NOT NULL | -- | 原始链接 |
 | `content` | `text` | NOT NULL | -- | 网页正文（纯文本） |
 | `summary` | `text` | NOT NULL | `''` | AI 生成摘要（120-220字） |
 | `outline` | `jsonb` | NOT NULL | `'[]'` | 文章大纲（字符串数组） |
-| `tags` | `text[]` | NOT NULL | `'{}'` | 标签数组（3-6个中文关键词） |
+| `tags` | `jsonb` | NOT NULL | `'[]'` | 标签数组（3-6个中文关键词） |
 | `created_at` | `timestamptz` | NOT NULL | `now()` | 创建时间 |
 
 **索引：**
 - `idx_bookmarks_created_at` — `created_at DESC`，优化列表排序
+- `bookmarks_user_url_key` — `(user_id, url)` 唯一索引，应用层依赖其做 URL 去重（`ON CONFLICT`）
 
-### 1.2 Supabase Auth（内置）
+### 1.2 `public.users`（自建认证）
 
-项目使用 Supabase Auth 管理用户，无需手动建表。
+用户账号表，替代原 Supabase Auth。
 
-| 字段名 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `uuid` | 用户唯一标识 |
-| `email` | `text` | 用户邮箱 |
-| `created_at` | `timestamptz` | 注册时间 |
+| 字段名 | 类型 | 约束 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `id` | `uuid` | PRIMARY KEY | `gen_random_uuid()` | 用户唯一标识 |
+| `email` | `text` | NOT NULL, UNIQUE | -- | 用户邮箱（小写归一） |
+| `password_hash` | `text` | NOT NULL | -- | scrypt 加盐哈希（`scrypt:salt:hash`） |
+| `created_at` | `timestamptz` | NOT NULL | `now()` | 注册时间 |
+
+### 1.3 `public.sessions`
+
+登录会话表，Cookie 中的 token 指向此表。
+
+| 字段名 | 类型 | 约束 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `token` | `text` | PRIMARY KEY | -- | 随机 64 位十六进制会话令牌 |
+| `user_id` | `uuid` | NOT NULL, FK → `users.id` ON DELETE CASCADE | -- | 所属用户 |
+| `created_at` | `timestamptz` | NOT NULL | `now()` | 创建时间 |
+| `expires_at` | `timestamptz` | NOT NULL | -- | 过期时间（创建后 30 天） |
 
 ---
 
@@ -92,9 +105,49 @@ interface BookmarkRecord {
 }
 ```
 
+### 2.4 `AuthUser`
+
+当前登录用户（客户端与 API 之间传递的最小用户信息）。
+
+```typescript
+interface AuthUser {
+  id: string;    // UUID
+  email: string;
+}
+```
+
+**文件位置：** `types/auth.ts`
+
 ---
 
 ## 3. API 请求/响应格式
+
+### 3.0a POST `/api/auth/signup`
+
+**请求体：**
+```json
+{ "email": "user@example.com", "password": "至少6位" }
+```
+
+**成功响应 (201)：** `{ "user": { "id": "uuid", "email": "..." } }`，同时 Set-Cookie 写入会话
+
+**错误响应：** 400 格式错误 / 409 邮箱已注册 / 503 数据库未配置
+
+### 3.0b POST `/api/auth/login`
+
+**请求体：** 同 signup
+
+**成功响应 (200)：** 同 signup
+
+**错误响应：** 400 / 401 邮箱或密码不正确 / 503
+
+### 3.0c POST `/api/auth/logout`
+
+**成功响应 (200)：** `{ "ok": true }`，清除会话 Cookie（服务端删除 sessions 记录）
+
+### 3.0d GET `/api/auth/me`
+
+**成功响应 (200)：** `{ "user": { "id": "uuid", "email": "..." } }` 或 `{ "user": null }`
 
 ### 3.1 POST `/api/process`
 
@@ -122,10 +175,11 @@ interface BookmarkRecord {
 
 ### 3.2 POST `/api/save`
 
+**请求头：** 需携带会话 Cookie（未登录返回 401）
+
 **请求体：**
 ```json
 {
-  "user_id": "uuid or null",
   "title": "string",
   "url": "string",
   "content": "string",
@@ -135,12 +189,16 @@ interface BookmarkRecord {
 }
 ```
 
-**成功响应 (200)：** `BookmarkRecord`
+> `user_id` 由服务端从会话取得，不接受客户端传入。
+
+**成功响应 (200)：** `BookmarkRecord` + `duplicated` 标记（同用户同 URL 重复保存时 `duplicated: true`，返回已有记录）
 
 ### 3.3 GET `/api/bookmarks`
 
+**请求头：** 需携带会话 Cookie（未登录返回 401）
+
 **查询参数：**
-- `id` (可选) — 指定则返回单条，否则返回列表
+- `id` (可选) — 指定则返回单条，否则返回当前用户列表
 
 **成功响应 (200)：** `BookmarkRecord[]` 或 `BookmarkRecord`
 
@@ -211,10 +269,7 @@ interface BookmarkRecord {
 
 | 变量名 | 类型 | 必需 | 可见范围 | 说明 |
 | --- | --- | --- | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | string | 是 | 客户端 | Supabase 项目 URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | string | 是 | 客户端 | 匿名访问 Key |
-| `SUPABASE_URL` | string | 是 | 服务端 | 服务端 Supabase URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | string | 是 | 服务端 | 服务端管理 Key |
+| `DATABASE_URL` | string | 是 | 服务端 | Neon Postgres 连接串（建议 pooled） |
 | `DEEPSEEK_API_KEY` | string | 二选一 | 服务端 | DeepSeek API Key |
 | `DEEPSEEK_BASE_URL` | string | 否 | 服务端 | 默认 Beijing 端点 |
 | `DEEPSEEK_MODEL` | string | 否 | 服务端 | 默认 deepseek-v4-flash |
@@ -229,11 +284,14 @@ interface BookmarkRecord {
 | 状态码 | 场景 |
 | --- | --- |
 | 200 | 成功 |
+| 201 | 注册成功 |
 | 400 | 必填字段缺失或格式错误 |
-| 401 | 未登录或认证失效 |
+| 401 | 未登录或认证失效（含登录密码错误） |
 | 404 | 记录不存在 |
+| 409 | 注册邮箱已存在 |
 | 500 | 服务端错误（AI 调用失败、数据库异常等） |
+| 503 | 数据库未配置（缺少 DATABASE_URL） |
 
 ---
 
-> 维护者：LinkMind 团队 · 编辑日期：2026-07-06
+> 维护者：LinkMind 团队 · 编辑日期：2026-10-03

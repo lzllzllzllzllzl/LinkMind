@@ -2,9 +2,16 @@ import { NextResponse } from "next/server";
 
 import { saveBookmark } from "@/lib/bookmark-store";
 import type { SaveBookmarkInput } from "@/types/bookmark";
+import { getCurrentUser } from "@/utils/auth";
 
 export async function POST(request: Request) {
   try {
+    const user = await getCurrentUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "请先登录" }, { status: 401 });
+    }
+
     const body = (await request.json()) as Partial<SaveBookmarkInput>;
 
     if (!body?.url || !body?.title || !body?.content) {
@@ -27,8 +34,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const saved = await saveBookmark({
-      user_id: body.user_id ?? null,
+    const result = await saveBookmark({
+      user_id: user.id,
       title: body.title,
       url: body.url,
       content: body.content,
@@ -36,7 +43,8 @@ export async function POST(request: Request) {
       outline: body.outline,
       tags: body.tags,
     });
-    return NextResponse.json(saved);
+
+    return NextResponse.json({ ...result.record, duplicated: result.duplicated });
   } catch (error) {
     const message = error instanceof Error ? error.message : "保存失败";
     return NextResponse.json({ error: message }, { status: 500 });

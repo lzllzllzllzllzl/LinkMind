@@ -1,21 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { answerQuestionAboutContent } from "@/lib/ai";
-import { createClient } from "@/utils/supabase/server";
+import { getBookmarkById } from "@/lib/bookmark-store";
+import { getCurrentUser } from "@/utils/auth";
 
 type ChatRequestBody = {
   bookmarkId?: string;
   question?: string;
-};
-
-type BookmarkRow = {
-  id: string;
-  user_id: string | null;
-  title: string;
-  content: string;
-  summary: string;
-  outline: string[];
-  tags: string[];
 };
 
 export async function POST(request: Request) {
@@ -31,34 +22,24 @@ export async function POST(request: Request) {
       );
     }
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
-    if (userError || !user) {
+    if (!user) {
       return NextResponse.json({ error: "请先登录" }, { status: 401 });
     }
 
-    const { data, error } = await supabase
-      .from("bookmarks")
-      .select("id,user_id,title,content,summary,outline,tags")
-      .eq("id", bookmarkId)
-      .eq("user_id", user.id)
-      .single();
+    const record = await getBookmarkById(bookmarkId, user.id);
 
-    if (error || !data) {
+    if (!record) {
       return NextResponse.json({ error: "未找到对应收藏内容" }, { status: 404 });
     }
 
-    const row = data as BookmarkRow;
     const answer = await answerQuestionAboutContent({
-      title: row.title,
-      summary: row.summary,
-      outline: row.outline,
-      tags: row.tags,
-      content: row.content,
+      title: record.title,
+      summary: record.summary,
+      outline: record.outline,
+      tags: record.tags,
+      content: record.content,
       question,
     });
 

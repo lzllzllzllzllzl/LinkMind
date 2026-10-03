@@ -3,7 +3,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js" alt="Next.js">
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react" alt="React">
-  <img src="https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase" alt="Supabase">
+  <img src="https://img.shields.io/badge/Neon-00E599?style=for-the-badge&logo=neon" alt="Neon">
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
 </p>
 
@@ -14,18 +14,19 @@
 - **智能解析** - 粘贴任意链接（知乎、B站、小红书、公众号等），AI 自动提取正文、生成结构化摘要
 - **知识结构化** - 自动生成文章大纲、提取关键词标签
 - **AI 追问** - 保存后可基于原文继续提问，AI 从原文出发回答
-- **跨端同步** - 数据存储在 Supabase，不同设备保持一致
+- **跨端同步** - 数据存储在 Neon Postgres，不同设备保持一致
 - **响应式设计** - 完美适配桌面端和移动端
 
 ## 🛠 技术栈
 
-| 类别    | 技术                                 |
-| ----- | ---------------------------------- |
-| 前端框架  | Next.js 16 (App Router) + React 19 |
-| 样式方案  | CSS Modules                        |
-| 后端服务  | Supabase (PostgreSQL + Auth)       |
-| AI 能力 | 豆包 API / OpenAI API                |
-| 部署平台  | Vercel                             |
+| 类别    | 技术                                        |
+| ----- | ----------------------------------------- |
+| 前端框架  | Next.js 16 (App Router) + React 19        |
+| 样式方案  | CSS Modules                               |
+| 数据库   | Neon (Serverless PostgreSQL)              |
+| 认证    | 自建会话认证（scrypt 加盐哈希 + httpOnly Cookie）     |
+| AI 能力 | DeepSeek API / OpenAI 兼容接口                |
+| 部署平台  | Vercel                                    |
 
 ## 🚀 快速开始
 
@@ -37,8 +38,8 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/your-username/linkmind.git
-cd linkmind/linkmind-mvp
+git clone https://github.com/lzllzllzllzllzl/LinkMind.git
+cd LinkMind
 ```
 
 ### 2. 安装依赖
@@ -57,37 +58,46 @@ cp .env.example .env.local
 
 需要配置以下环境变量：
 
-#### Supabase（必需）
+#### Neon 数据库（必需）
 
-| 变量名                             | 说明              |
-| ------------------------------- | --------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`      | Supabase 项目 URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 匿名访问 Key        |
-| `SUPABASE_SERVICE_ROLE_KEY`     | 服务端管理 Key       |
+| 变量名           | 说明                              |
+| -------------- | --------------------------------- |
+| `DATABASE_URL` | Neon Postgres 连接串（建议用 pooled） |
 
-> 前往 [Supabase Dashboard](https://supabase.com/dashboard) 创建项目并获取以上凭证
+> 前往 [Neon Console](https://console.neon.tech) 创建项目并获取连接串，
+> 或通过 CLI：`neonctl auth` 登录后执行 `neonctl connection-string <project-id> --pooled`
 
 #### AI API（选择一种）
 
-**方案 A: 豆包 API（推荐）**
+**方案 A: DeepSeek API（推荐）**
 
-| 变量名            | 说明                                         |
-| -------------- | ------------------------------------------ |
-| `ARK_API_KEY`  | 豆包 API Key                                 |
-| `ARK_BASE_URL` | `https://ark.cn-beijing.volces.com/api/v3` |
-| `ARK_MODEL`    | `doubao-1-5-lite-32k-250115`               |
+| 变量名               | 说明                            |
+| ------------------ | ------------------------------- |
+| `DEEPSEEK_API_KEY` | DeepSeek API Key                |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com`（可选） |
+| `DEEPSEEK_MODEL`   | 模型名（可选）                      |
 
-**方案 B: OpenAI API**
+**方案 B: OpenAI 兼容 API**
 
 | 变量名               | 说明                          |
-| ----------------- | --------------------------- |
+| ----------------- | ----------------------------- |
 | `OPENAI_API_KEY`  | OpenAI API Key              |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` |
 | `OPENAI_MODEL`    | `gpt-4o-mini`               |
 
 ### 4. 初始化数据库
 
-在 Supabase SQL Editor 中执行 `supabase/schema.sql` 创建数据表。
+将 `db/schema.sql` 应用到 Neon 数据库（无需本地安装 psql）：
+
+```bash
+DATABASE_URL=postgres://... npx tsx scripts/apply-schema.ts
+```
+
+可通过冒烟测试验证数据库连通性（会创建并清理临时测试数据）：
+
+```bash
+DATABASE_URL=postgres://... npx tsx scripts/db-smoke.ts
+```
 
 ### 5. 启动开发服务器
 
@@ -105,19 +115,32 @@ npm run dev
 4. **保存知识** - 一键保存到个人知识库
 5. **追问 AI** - 进入详情页可基于原文继续提问
 
-## 🔌 Supabase 数据读写机制
+## 🔌 Neon 数据读写机制
 
-### 1. Supabase 简介
+### 1. Neon 简介
 
-Supabase 是一个开源的 Firebase 替代方案，提供：
+Neon 是 Serverless PostgreSQL 平台，提供：
 
-- **PostgreSQL 数据库** - 强大的关系型数据库
-- **Auth 认证系统** - 用户注册/登录
-- **实时订阅** - 数据变化实时推送
+- **标准 PostgreSQL** - 存储计算分离，按需扩缩
+- **分支数据库** - 每个分支是数据的完整副本，适合开发/预览环境
+- **HTTP 查询协议** - 配合 Serverless 驱动，无需维护连接池
 
 ### 2. 数据表结构
 
 ```sql
+create table public.users (      -- 自建认证用户表
+  id uuid primary key,
+  email text unique,
+  password_hash text,            -- scrypt 加盐哈希
+  created_at timestamptz
+);
+
+create table public.sessions (   -- 登录会话
+  token text primary key,
+  user_id uuid references users(id) on delete cascade,
+  expires_at timestamptz
+);
+
 create table public.bookmarks (
   id uuid primary key,           -- 唯一标识
   user_id uuid,                  -- 所属用户
@@ -126,112 +149,91 @@ create table public.bookmarks (
   content text,                  -- 网页正文内容
   summary text,                  -- AI 生成的摘要
   outline jsonb,                 -- 文章大纲（JSON 数组）
-  tags text[],                   -- 标签数组
-  created_at timestamptz         -- 创建时间
+  tags jsonb,                    -- 标签数组
+  created_at timestamptz
 );
 ```
 
 ### 3. 本项目的数据读写流程
 
-#### 连接 Supabase
+#### 连接 Neon
 
-项目通过 `utils/supabase/server.ts` 创建客户端连接：
+项目通过 [lib/db.ts](lib/db.ts) 创建 Serverless 驱动客户端（HTTP 协议，无需连接池）：
 
 ```typescript
-// utils/supabase/server.ts
-import { createServerClient } from "@supabase/ssr";
+// lib/db.ts
+import { neon } from "@neondatabase/serverless";
 
-export async function createClient() {
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() { ... },
-        setAll() { ... },
-      },
-    }
-  );
+export function getDb() {
+  return neon(process.env.DATABASE_URL!);
 }
 ```
 
 #### 写入数据（保存收藏）
 
 ```
-用户点击保存 → /api/save/route.ts → bookmark-store.ts → Supabase.insert()
+用户点击保存 → /api/save/route.ts → bookmark-store.ts → INSERT ... ON CONFLICT
 ```
 
-核心代码在 [lib/bookmark-store.ts](lib/bookmark-store.ts#L22-L48)：
+核心代码在 [lib/bookmark-store.ts](lib/bookmark-store.ts)：
 
 ```typescript
 export async function saveBookmark(input: SaveBookmarkInput) {
-  const supabase = getSupabaseAdmin();
-  
-  const { data, error } = await supabase
-    .from("bookmarks")
-    .insert({ ... })
-    .select("*")
-    .single();
-    
-  return data;
+  const inserted = await db`
+    insert into bookmarks (user_id, title, url, content, summary, outline, tags)
+    values (...)
+    on conflict (user_id, url) do nothing
+    returning *
+  `;
+  // 冲突时回查已有记录，返回 { record, duplicated }
 }
 ```
 
 #### 读取数据（查询收藏）
 
 ```
-用户访问历史页 → /api/bookmarks/route.ts → bookmark-store.ts → Supabase.select()
+用户访问历史页 → /api/bookmarks/route.ts → bookmark-store.ts → SELECT
 ```
 
-核心代码在 [lib/bookmark-store.ts](lib/bookmark-store.ts#L51-L66)：
+#### 认证与用户数据隔离
+
+认证为自建会话方案：注册/登录写入 `users` 表并创建 `sessions` 记录，
+客户端持有 httpOnly Cookie，服务端通过 [utils/auth.ts](utils/auth.ts) 还原当前用户：
 
 ```typescript
-export async function getAllBookmarks() {
-  const supabase = getSupabaseAdmin();
-  
-  const { data, error } = await supabase
-    .from("bookmarks")
-    .select("*")
-    .order("created_at", { ascending: false });
-    
-  return data ?? [];
+// utils/auth.ts
+export async function getCurrentUser() {
+  const token = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
+  return token ? getSessionUser(token) : null;
 }
 ```
 
-#### 认证用户数据隔离
-
-在 [app/api/chat/route.ts](app/api/chat/route.ts#L34-L48) 中，查询时同时验证用户身份：
+所有查询都在服务端按 `user_id` 过滤，保证用户隔离：
 
 ```typescript
-const supabase = await createClient();
-const { data: { user } } = await supabase.auth.getUser();
+// app/api/chat/route.ts
+const user = await getCurrentUser();
+if (!user) return NextResponse.json({ error: "请先登录" }, { status: 401 });
 
-// 查询时限制只返回当前用户的数据
-const { data } = await supabase
-  .from("bookmarks")
-  .select("*")
-  .eq("user_id", user.id)  // 用户隔离
-  .single();
+const record = await getBookmarkById(bookmarkId, user.id); // 仅查当前用户数据
 ```
 
 ### 4. 环境变量配置
 
-| 变量名                             | 说明           | 获取方式              |
-| ------------------------------- | ------------ | ----------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`      | 项目 URL       | Supabase 设置 → API |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 匿名 Key（客户端用） | Supabase 设置 → API |
-| `SUPABASE_SERVICE_ROLE_KEY`     | 管理 Key（服务端用） | Supabase 设置 → API |
+| 变量名           | 说明                   | 获取方式                       |
+| -------------- | ---------------------- | ------------------------------ |
+| `DATABASE_URL` | Neon 连接串（服务端用）  | Neon Console 或 neonctl CLI     |
 
 ### 5. 本地无配置时的降级机制
 
-项目支持在没有 Supabase 时使用内存存储（仅开发调试用）：
+项目支持在没有数据库时使用内存存储（仅开发调试用）：
 
 ```typescript
 // lib/bookmark-store.ts
-if (!hasSupabaseConfig()) {
+if (!hasDbConfig()) {
   // 使用内存数组存储
   memoryBookmarks.unshift(record);
-  return record;
+  return { record, duplicated: false };
 }
 ```
 
@@ -239,7 +241,7 @@ if (!hasSupabaseConfig()) {
 
 1. 将代码推送到 GitHub
 2. 在 [Vercel](https://vercel.com) 导入仓库
-3. 在 Project Settings 中配置环境变量
+3. 在 Project Settings 中配置环境变量（`DATABASE_URL` 必需，AI Key 按需）
 4. 部署完成，自动生成访问域名
 
 ## 📁 项目结构
@@ -248,18 +250,23 @@ if (!hasSupabaseConfig()) {
 linkmind-mvp/
 ├── app/                    # Next.js App Router
 │   ├── api/               # API 路由
+│   │   ├── auth/          # 注册/登录/登出/会话
 │   │   ├── process/       # AI 内容处理
 │   │   └── chat/          # AI 问答
 │   ├── detail/[id]/       # 详情页
 │   ├── history/          # 知识库页
 │   └── auth/             # 登录/注册
+├── db/
+│   └── schema.sql        # 数据库 Schema
 ├── lib/
 │   ├── ai.ts             # AI 调用逻辑
-│   └── supabase.ts       # Supabase 客户端
-├── types/
-│   └── bookmark.ts       # 类型定义
-└── supabase/
-    └── schema.sql        # 数据库 Schema
+│   ├── auth.ts           # 认证核心（哈希/会话）
+│   ├── db.ts             # Neon 客户端
+│   └── bookmark-store.ts # 收藏 CRUD
+├── scripts/
+│   ├── apply-schema.ts   # 应用数据库 Schema
+│   └── db-smoke.ts       # 数据库冒烟测试
+└── types/                # 类型定义
 ```
 
 ## 🤝 贡献
