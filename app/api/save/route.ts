@@ -44,7 +44,19 @@ export async function POST(request: Request) {
       tags: body.tags,
     });
 
-    return NextResponse.json({ ...result.record, duplicated: result.duplicated });
+    // 响应不回传正文（首页只用到 id 和 duplicated 标记），减少传输体积
+    const { record, duplicated } = result;
+    return NextResponse.json({
+      id: record.id,
+      user_id: record.user_id,
+      title: record.title,
+      url: record.url,
+      summary: record.summary,
+      outline: record.outline,
+      tags: record.tags,
+      created_at: record.created_at,
+      duplicated,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "保存失败";
     return NextResponse.json({ error: message }, { status: 500 });

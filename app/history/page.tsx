@@ -14,7 +14,6 @@ type BookmarkItem = {
   user_id: string | null;
   title: string;
   url: string;
-  content: string;
   summary: string;
   outline: string[];
   tags: string[] | null;

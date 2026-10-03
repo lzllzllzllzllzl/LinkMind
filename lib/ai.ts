@@ -26,7 +26,7 @@ function getAIConfig(): AIConfig {
 async function chatCompletion(
   config: AIConfig,
   messages: { role: "system" | "user"; content: string }[],
-  options?: { temperature?: number; responseFormat?: { type: "json_object" } }
+  options?: { temperature?: number; maxTokens?: number; responseFormat?: { type: "json_object" } }
 ) {
   if (!config.apiKey) {
     throw new Error("未配置 API Key");
@@ -42,6 +42,7 @@ async function chatCompletion(
       model: config.model,
       messages,
       temperature: options?.temperature ?? 0.2,
+      ...(options?.maxTokens && { max_tokens: options.maxTokens }),
       ...(options?.responseFormat && { response_format: options.responseFormat }),
     }),
   });
@@ -144,7 +145,8 @@ export async function generateStructuredContent(
           { role: "system", content: "你是人工智能助手，擅长结构化总结文章。" },
           { role: "user", content: prompt },
         ],
-        { responseFormat: { type: "json_object" } }
+        // 限制输出长度：正常结果约 600-900 tokens，上限用于拦截模型跑飞导致的长等待
+        { responseFormat: { type: "json_object" }, maxTokens: 2048 }
       );
     } catch (e) {
       console.error("[AI] JSON模式调用失败，尝试普通模式：", e);

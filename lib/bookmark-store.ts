@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 
 import { getDb, hasDbConfig } from "@/lib/db";
-import type { BookmarkRecord, SaveBookmarkInput } from "@/types/bookmark";
+import type { BookmarkListItem, BookmarkRecord, SaveBookmarkInput } from "@/types/bookmark";
 
 const memoryBookmarks: BookmarkRecord[] = [];
 
@@ -98,13 +98,26 @@ export async function saveBookmark(input: SaveBookmarkInput): Promise<SaveBookma
   return { record: mapRow(existed[0] as BookmarkRow), duplicated: true };
 }
 
-export async function getAllBookmarks(userId: string): Promise<BookmarkRecord[]> {
+export async function getAllBookmarks(userId: string): Promise<BookmarkListItem[]> {
   if (!hasDbConfig()) {
-    return memoryBookmarks.filter((item) => item.user_id === userId);
+    return memoryBookmarks
+      .filter((item) => item.user_id === userId)
+      .map((item) => ({
+        id: item.id,
+        user_id: item.user_id,
+        title: item.title,
+        url: item.url,
+        summary: item.summary,
+        outline: item.outline,
+        tags: item.tags,
+        created_at: item.created_at,
+      }));
   }
 
+  // 列表不取 content（正文可能很大），详情页/追问走 getBookmarkById
   const rows = await getDb()`
-    select * from bookmarks
+    select id, user_id, title, url, summary, outline, tags, created_at
+    from bookmarks
     where user_id = ${userId}
     order by created_at desc
   `;

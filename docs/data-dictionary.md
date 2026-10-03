@@ -118,6 +118,16 @@ interface AuthUser {
 
 **文件位置：** `types/auth.ts`
 
+### 2.5 `BookmarkListItem`
+
+列表场景的精简收藏记录（不含正文，用于知识库列表接口）。
+
+```typescript
+type BookmarkListItem = Omit<BookmarkRecord, "content">;
+```
+
+**文件位置：** `types/bookmark.ts`
+
 ---
 
 ## 3. API 请求/响应格式
@@ -191,7 +201,7 @@ interface AuthUser {
 
 > `user_id` 由服务端从会话取得，不接受客户端传入。
 
-**成功响应 (200)：** `BookmarkRecord` + `duplicated` 标记（同用户同 URL 重复保存时 `duplicated: true`，返回已有记录）
+**成功响应 (200)：** 精简收藏记录（`BookmarkRecord` 去掉 `content` 字段）+ `duplicated` 标记（同用户同 URL 重复保存时 `duplicated: true`，返回已有记录）
 
 ### 3.3 GET `/api/bookmarks`
 
@@ -200,7 +210,7 @@ interface AuthUser {
 **查询参数：**
 - `id` (可选) — 指定则返回单条，否则返回当前用户列表
 
-**成功响应 (200)：** `BookmarkRecord[]` 或 `BookmarkRecord`
+**成功响应 (200)：** `BookmarkListItem[]`（不含正文 `content`，保证列表加载速度）或 `BookmarkListItem`
 
 ### 3.4 POST `/api/chat`
 
