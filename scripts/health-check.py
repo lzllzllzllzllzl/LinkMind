@@ -43,10 +43,10 @@ CHECKS = [
         "expected_status": 200,
     },
     {
-        "name": "bookmarks API 正常",
+        "name": "bookmarks API 未登录返回 401",
         "path": "/api/bookmarks",
         "method": "GET",
-        "expected_status": 200,
+        "expected_status": 401,
     },
     {
         "name": "process API 参数校验",
